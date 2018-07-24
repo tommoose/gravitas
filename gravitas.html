@@ -1,0 +1,237 @@
+<html>
+<head><meta http-equiv="Content-Type" content="text/html; charset=us-ascii">
+	
+	<meta content="width=800, initial-scale=1" name="viewport" />
+	<title></title>
+	<script>
+	</script>
+</head>
+<body>
+<p><canvas id="canvas" style="margin: auto;"></canvas></p>
+
+<div id="underlay" style="width: 100%; height: 100%; z-index: -1; position: absolute; top: 0; background-color: #292929"></div>
+<script>
+    var raf, running = false;
+    var canvas = document.getElementById('canvas');
+    var ctx = canvas.getContext('2d',{alpha: false});
+    ctx.canvas.width  = document.getElementById("underlay").offsetWidth;
+    ctx.canvas.height = document.getElementById("underlay").offsetHeight;
+
+    function offset(x1, y1, x2, y2) {
+        return point(x2-x1, y2-y1);
+    }
+
+    function distance(x1, y1, x2, y2) {
+        return Math.sqrt(Math.abs(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2)));
+    }
+
+    function centre(min_x, min_y, max_x, max_y) {
+        return point(min_x + (max_x - min_x) / 2, min_y + (max_y - min_y) / 2);
+    }
+
+    function rotate_point(px, py, ox, oy, angle) {
+        return point(
+            Math.cos(angle) * (px - ox) - Math.sin(angle) * (py - oy) + ox,
+            Math.sin(angle) * (px - ox) + Math.cos(angle) * (py - oy) + oy
+        );
+    }
+    
+    var point = function(x, y) {
+        return {
+            x: x,
+            y: y
+        }
+    }
+
+    var well = function(pos, g){
+        return {
+            pos: pos,
+            g: g
+        }
+    };
+
+    function start() {
+        if (!running)
+        {
+            running = true;
+            animate();
+        }
+    }
+
+    document.addEventListener("keydown", function(e) {
+        if (e.which == 71) {        // g
+            gravity_on = !gravity_on;
+            e.preventDefault();
+        }
+        else if (e.which == 13) {        // enter
+            start();
+            e.preventDefault();
+        }
+        else if (e.which == 32) {   //space
+            craft.throttle = 100;
+            e.preventDefault();
+        }
+        else if (e.which == 37) {   //left
+            craft.rcs_throttle = -100;
+            e.preventDefault();
+        }
+        else if (e.which == 39) {   //right
+            craft.rcs_throttle = 100;
+            e.preventDefault();
+        }
+            
+    });
+
+    document.addEventListener("keyup", function(e) {
+        if (e.which == 32) { // space
+            craft.throttle = 0;
+            e.preventDefault();
+        }
+        else if (e.which == 37) {   //left
+            craft.rcs_throttle = 0;
+            e.preventDefault();
+        }
+        else if (e.which == 39) {   //right
+            craft.rcs_throttle = 0;
+            e.preventDefault();
+        }
+    });
+
+    setup();
+    redraw();
+		
+    function animate() {
+        redraw();
+        raf = window.requestAnimationFrame(animate);
+    }
+
+    function apply_gravity() {
+        var rel_pos = offset(craft.pos.x, craft.pos.y, planet.pos.x, planet.pos.y);
+
+        var dV = planet.g / Math.sqrt(Math.pow(rel_pos.x, 2) + Math.pow(rel_pos.y, 2)) / craft.mass;
+
+        craft.velocity.x += dV * rel_pos.x;
+        craft.velocity.y += dV * rel_pos.y;
+    }
+
+    // particulars
+    var craft, planet;
+    var gravity_on = true;
+
+    function setup() {
+        craft = setupCraft();
+        planet = setupPlanet();
+    }
+
+    function setupCraft() {
+        return {
+            pos: centre(0, 0, ctx.canvas.width, ctx.canvas.height), 
+            size: point(100, 100),
+            mass: 100,
+            velocity: point(0,0),
+            rotational_velocity: 0,
+            rotation_velocity_max: 4,
+            color: "rgb(255,255,255)",
+            attitude: 0,
+            throttle: 0,
+            thrust: 20,
+            rcs_throttle: 0,
+            rcs_thrust: 20,
+        }
+    }
+
+    function setupPlanet() {
+        return {
+            pos: point(ctx.canvas.width / 2, ctx.canvas.height * 2),
+            g: 10,
+            radius: 100,
+        }
+    }
+
+    function redraw() {
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        if (gravity_on)
+            apply_gravity();
+        apply_thrust();
+        apply_velocity();
+        apply_rcs();
+        apply_rotational_velocity();
+        redraw_craft();
+    }
+
+    function apply_thrust() {
+        if (craft.throttle > 0)
+        {
+            var thrust_x = craft.thrust * Math.cos((craft.attitude + 90) * Math.PI / 180) / craft.mass * craft.throttle / 100;
+            var thrust_y = craft.thrust * Math.sin((craft.attitude + 90) * Math.PI / 180) / craft.mass * craft.throttle / 100;
+
+            craft.velocity.x -= thrust_x;
+            craft.velocity.y -= thrust_y;
+        }
+    }
+
+    function apply_velocity() {
+        craft.pos.x += craft.velocity.x;
+        craft.pos.y += craft.velocity.y;
+    }
+
+    function apply_rcs() {
+        if (craft.rcs_throttle != 0)
+        {
+            craft.rotational_velocity += craft.rcs_thrust / craft.mass * craft.rcs_throttle / 100;
+            if (craft.rotational_velocity > craft.rotation_velocity_max)
+                craft.rotational_velocity = craft.rotation_velocity_max;
+        }
+    }
+
+    function apply_rotational_velocity() {
+        craft.attitude += craft.rotational_velocity;
+    }
+
+    function redraw_craft() {
+
+        ctx.beginPath();
+
+        var width = craft.size.x;
+        var height = craft.size.y;
+
+        var points = [];
+        
+        points.push(point(Math.floor(craft.pos.x - width / 2), Math.floor(craft.pos.y - height / 2)));  // NW
+        
+        points.push(point(Math.floor(craft.pos.x),Math.floor(craft.pos.y - height)));   // N
+        
+        points.push(point(Math.floor(craft.pos.x + width / 2),Math.floor(craft.pos.y - height / 2)));   // NE
+        points.push(point(Math.floor(craft.pos.x + width / 2),Math.floor(craft.pos.y + height / 2)));   // SE
+
+        if (craft.throttle > 0)
+        {
+            points.push(point(Math.floor(craft.pos.x + width * 2 / 6),Math.floor(craft.pos.y + height)));       // Flames 1 outer
+            points.push(point(Math.floor(craft.pos.x + width * 1 / 6),Math.floor(craft.pos.y + height / 2)));   // Flames 2 inner
+            points.push(point(Math.floor(craft.pos.x                ),Math.floor(craft.pos.y + height)));       // Flames 3 outer
+            points.push(point(Math.floor(craft.pos.x - width * 1 / 6),Math.floor(craft.pos.y + height / 2)));   // Flames 4 inner
+            points.push(point(Math.floor(craft.pos.x - width * 2 / 6),Math.floor(craft.pos.y + height)));       // Flames 5 outer
+        }
+
+        points.push(point(Math.floor(craft.pos.x - width / 2),Math.floor(craft.pos.y + height / 2)));   // SW
+
+        // attitude
+        for (var i = 0; i < points.length; i++) {
+            var p = points[i],
+                newpoint = rotate_point(p.x, p.y, craft.pos.x, craft.pos.y, (craft.attitude * Math.PI / 180));
+            //points[i] = newpoint;
+            
+            // draw points
+            if (i == 0)
+                ctx.moveTo(newpoint.x, newpoint.y);
+            else
+                ctx.lineTo(newpoint.x, newpoint.y);
+        }
+
+        
+
+        ctx.fillStyle = craft.color;
+        ctx.fill();
+    }
+</script>
+</body></html>
