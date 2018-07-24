@@ -51,11 +51,8 @@
     };
 
     function start() {
-        if (!running)
-        {
             running = true;
             animate();
-        }
     }
 
     document.addEventListener("keydown", function(e) {
@@ -63,21 +60,35 @@
             gravity_on = !gravity_on;
             e.preventDefault();
         }
-        else if (e.which == 13) {        // enter
-            start();
+        else if (e.which == 13) {   // enter
+            if (!running) {
+                start();
+            } else {
+                // Reset
+                gravity_on = true;
+                display_help = false;
+                craft = setupCraft();
+                running = false;
+                redraw();
+            }
             e.preventDefault();
         }
-        else if (e.which == 32) {   //space
+        else if (e.which == 32) {   // space
+            if (!running)
+                start();
             craft.throttle = 100;
             e.preventDefault();
         }
-        else if (e.which == 37) {   //left
+        else if (e.which == 37) {   // left
             craft.rcs_throttle = -100;
             e.preventDefault();
         }
-        else if (e.which == 39) {   //right
+        else if (e.which == 39) {   // right
             craft.rcs_throttle = 100;
             e.preventDefault();
+        } else if (e.which == 191) {  // question mark
+            display_help = !display_help
+            redraw();
         }
             
     });
@@ -96,13 +107,12 @@
             e.preventDefault();
         }
     });
-
-    setup();
-    redraw();
 		
     function animate() {
-        redraw();
-        raf = window.requestAnimationFrame(animate);
+        if (running) {
+            redraw();
+            raf = window.requestAnimationFrame(animate);
+        }
     }
 
     function apply_gravity() {
@@ -117,6 +127,10 @@
     // particulars
     var craft, planet;
     var gravity_on = true;
+    var display_help = false;
+
+    setup();
+    redraw();
 
     function setup() {
         craft = setupCraft();
@@ -150,8 +164,17 @@
 
     function redraw() {
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-        if (gravity_on)
+        if (gravity_on) {
             apply_gravity();
+            drawSurface();
+        }
+
+        if (display_help)
+            drawHelp();
+
+        if (!running)
+            drawTitle();
+
         apply_thrust();
         apply_velocity();
         apply_rcs();
@@ -232,6 +255,43 @@
 
         ctx.fillStyle = craft.color;
         ctx.fill();
+    }
+
+    function drawTitle() {
+        ctx.save();
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.font = "bold 48px Garamond, georgia, serif";
+        ctx.fillText("Gravitas", craft.pos.x, craft.pos.y + craft.size.y * 1.5);
+        ctx.font = "28px Garamond, georgia, serif";
+        ctx.fillText("Press [Space] to Start", craft.pos.x, craft.pos.y + craft.size.y * 1.5 + 62);
+        ctx.font = "18px Garamond, georgia, serif";
+        ctx.fillText("Press [?] for options", craft.pos.x, craft.pos.y + craft.size.y * 2.5);
+        ctx.restore();
+    }
+
+    function drawHelp() {
+        ctx.save();
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "left";
+        ctx.font = "14px monospace";
+        var line = 0;
+        ctx.fillText("[?]       Toggle help", 10, 10 + (line++ * 20));
+        ctx.fillText("[Enter]   Start/Reset", 10, 10 + (line++ * 20));
+        ctx.fillText("[g]       Toggle gravity", 10, 10 + (line++ * 20));
+        ctx.fillText("[<--/-->] Turn", 10, 10 + (line++ * 20));
+        ctx.fillText("[Space]   Thrust", 10, 10 + (line++ * 20));
+        ctx.restore();
+    }
+
+    function drawSurface() {
+        ctx.save();
+        ctx.beginPath()
+
+        ctx.fillStyle = "#336644";
+        ctx.arc(planet.pos.x, planet.pos.y + ctx.canvas.height / 1.2, planet.pos.y, 0, Math.PI, 2*Math.PI);
+        ctx.fill();
+        ctx.restore();
     }
 </script>
 </body></html>
