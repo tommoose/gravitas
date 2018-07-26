@@ -51,11 +51,13 @@
     };
 
     function start() {
-            running = true;
-            animate();
+        lastTime = new Date();
+        running = true;
+        animate();
     }
 
     document.addEventListener("keydown", function(e) {
+
         if (e.which == 71) {        // g
             gravity_on = !gravity_on;
             e.preventDefault();
@@ -83,10 +85,25 @@
             craft.rcs_throttle = 100;
             e.preventDefault();
         } else if (e.which == 191) {  // question mark
-            display_help = !display_help
+            show_help = !show_help
             redraw();
+            e.preventDefault();
         }
-            
+        else if (e.which == 90) {   // Z
+            if (zoom == 1)
+                zoom = 0.04;
+            else
+                zoom = 1;
+            e.preventDefault();
+        }
+        else if (e.which == 84) {   // Z
+            trails_on = !trails_on;
+            e.preventDefault();
+        } else {    // everything else
+            if (show_help)
+                draw_message("Key" + e.which);
+        }
+        
     });
 
     document.addEventListener("keyup", function(e) {
@@ -104,11 +121,16 @@
         }
     });
 		
+    var lastTime, timeSinceLastFrame = 0;
     function animate() {
         if (running) {
             if (!check_win()) {
                 redraw();
                 raf = window.requestAnimationFrame(animate);
+                var now = new Date();
+                timeSinceLastFrame = now - lastTime;
+                console.log(timeSinceLastFrame);
+                lastTime = now;
             } else {
                 draw_win();
             }
@@ -117,8 +139,10 @@
 
     // particulars
     var craft, planet, gate;
-    var gravity_on = true;
+    var gravity_on = true, trails_on = false;
     var show_help = false;
+    var message = "", message_start = null, k_message_timeout = 3000;
+    var zoom = 0.04;
 
     reset();
 
@@ -137,9 +161,9 @@
 
     function setupCraft() {
         return {
-            pos: point(ctx.canvas.width / 2, ctx.canvas.height / 4), 
+            pos: point(0, setupPlanet().radius * -1), 
             size: point(30, 30),
-            mass: 100,
+            mass: 1,
             velocity: point(0,0),
             rotational_velocity: 0,
             rotation_velocity_max: 4,
@@ -148,22 +172,24 @@
             throttle: 0,
             thrust: 20,
             rcs_throttle: 0,
-            rcs_thrust: 20,
+            rcs_thrust: 12,
         }
     }
 
     function setupPlanet() {
         return {
-            pos: point(ctx.canvas.width / 2, ctx.canvas.height / 2), 
+            pos: point(0, 0), 
             g: 20,
-            radius: 100,
+            mass: 5.972 * Math.pow(10,24),
+            velocity: point(0,0),
+            radius: 6371000,
             color: "rgb(60,120,90)",
         }
     }
 
     function setupGate() {
         return {
-            pos: point(ctx.canvas.width * 3 / 4, ctx.canvas.height / 2),
+            pos: point(ctx.canvas.width * 1 / 4, 0),
             radius: 30,
             mass: 0,
             velocity: point(0, 0),
@@ -172,30 +198,51 @@
     }
 
     function redraw() {
-        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-        if (gravity_on) {
-            apply_gravity(craft, planet);
-            if (gate != null)
-                apply_gravity(gate, planet);
+        ctx.setTransform(1,0,0,1,0,0);//reset the transform matrix as it is cumulative
+        if (!trails_on)
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-            draw_planet(planet);
-        }
 
-        draw_gate(gate);
-
-        if (display_help)
-            draw_help();
+        ctx.translate(ctx.canvas.width * 0.5, ctx.canvas.height * 0.5);
+        ctx.transform(zoom, 0, 0, zoom, 0, 0 );
 
         if (!running)
             draw_title();
 
-        apply_thrust(craft);
-        update_velocity(craft);
+        if (show_help)
+            draw_help();
 
-        apply_rcs(craft);
-        update_rotational_velocity(craft);
+        if (message != "" && (new Date() - message_start) <= k_message_timeout)
+            draw_message();
+        
+        if (running) {
+            if (gravity_on) {
+                apply_gravity(craft, planet);
+                if (gate != null)
+                    apply_gravity(gate, planet);
+
+            }
+
+
+            apply_thrust(craft);
+            update_velocity(craft);
+            check_land();
+
+            apply_rcs(craft);
+            update_rotational_velocity(craft);
+        }
+
+        ctx.translate(-1 * craft.pos.x, -1 * craft.pos.y);
+
+
+        draw_planet(planet);
+        draw_gate(gate);
 
         draw_craft();
+
+
+
+
     }
 
     function apply_gravity(obj, well) {
@@ -204,11 +251,12 @@
         var dist = Math.sqrt(Math.pow(rel_pos.x, 2) + Math.pow(rel_pos.y, 2));
 
         // F = G*((m sub 1*m sub 2)/r^2)
-        var F = (obj.mass * well.g) / Math.pow(dist, 2);
+        var F = (6.67*Math.pow(10,-11)) * (obj.mass * well.mass) / Math.pow(dist, 2);
         //var dV = well.g / Math.pow(dist * 2, 2);
+        console.log(F);
 
-        obj.velocity.x += F * rel_pos.x / obj.mass;
-        obj.velocity.y += F * rel_pos.y / obj.mass;
+        obj.velocity.x += F * rel_pos.x / dist;
+        obj.velocity.y += F * rel_pos.y / dist;
     }
 
     function apply_thrust(c) {
@@ -216,6 +264,8 @@
         {
             var thrust_x = c.thrust * Math.cos((c.attitude + 90) * Math.PI / 180) / c.mass * c.throttle / 100;
             var thrust_y = c.thrust * Math.sin((c.attitude + 90) * Math.PI / 180) / c.mass * c.throttle / 100;
+            
+            console.log("Thrust: " + thrust_x + ", " + thrust_y);
 
             c.velocity.x -= thrust_x;
             c.velocity.y -= thrust_y;
@@ -226,18 +276,18 @@
         if (c.rcs_throttle != 0)
         {
             c.rotational_velocity += c.rcs_thrust / c.mass * c.rcs_throttle / 100;
-            if (c.rotational_velocity > c.rotation_velocity_max)
-                c.rotational_velocity = c.rotation_velocity_max;
+            if (Math.abs(c.rotational_velocity) > c.rotation_velocity_max)
+                c.rotational_velocity = c.rotation_velocity_max * (c.rotational_velocity / Math.abs(c.rotational_velocity));
         }
     }
 
     function update_velocity(obj) {
-        obj.pos.x += obj.velocity.x;
-        obj.pos.y += obj.velocity.y;
+        obj.pos.x += obj.velocity.x * timeSinceLastFrame / 1000;
+        obj.pos.y += obj.velocity.y * timeSinceLastFrame / 1000;
     }
 
     function update_rotational_velocity() {
-        craft.attitude += craft.rotational_velocity;
+        craft.attitude += craft.rotational_velocity * timeSinceLastFrame / 1000;
     }
 
     function draw_craft() {
@@ -287,7 +337,7 @@
     }
 
     function draw_title() {
-        var center = point(ctx.canvas.width / 2, ctx.canvas.height / 2);
+        var center = point(ctx.canvas.width / 2, ctx.canvas.height / 4);
 
         ctx.save();
         ctx.fillStyle = "#ffffff";
@@ -295,9 +345,9 @@
         ctx.font = "bold 48px Garamond, georgia, serif";
         ctx.fillText("Gravitas", center.x, center.y + 18);
         ctx.font = "28px Garamond, georgia, serif";
-        ctx.fillText("Press [Space] to Start", center.x, center.y + planet.radius + 52);
+        ctx.fillText("Press [Space] to Start", center.x, center.y + 86);
         ctx.font = "18px Garamond, georgia, serif";
-        ctx.fillText("Press [?] for options", center.x, center.y + planet.radius + 86);
+        ctx.fillText("Press [?] for options", center.x, center.y + 116);
         ctx.restore();
     }
 
@@ -324,6 +374,22 @@
         ctx.restore();
     }
 
+    function draw_message(msg) {
+        if (msg == null)
+            msg = message;
+        else {
+            message_start = new Date();
+            message = msg;
+        }
+
+        ctx.save();
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.font = "bold 14px Garamond, georgia, serif";
+        ctx.fillText(msg, ctx.canvas.width / 2, 10);
+        ctx.restore();
+    }
+
     function draw_planet(p) {
         ctx.save();
         ctx.beginPath();
@@ -343,6 +409,20 @@
         ctx.arc(g.pos.x, g.pos.y, g.radius, 0, 2*Math.PI);
         ctx.stroke();
         ctx.restore();
+    }
+
+    function check_land() {
+        var dist = distance(craft.pos.x, craft.pos.y, planet.pos.x, planet.pos.y);
+        var rel_vel = distance(craft.velocity.x, craft.velocity.y, planet.velocity.x, planet.velocity.y);
+
+        if (dist <= planet.radius && rel_vel < 100000) {
+            craft.velocity = point(0,0);    // stop the craft
+            craft.rotational_velocity = 0;
+            gravity_on = false;
+        } else {
+            gravity_on = true;
+        }
+
     }
 
     function check_win() {
