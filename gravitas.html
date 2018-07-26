@@ -84,6 +84,10 @@
         else if (e.which == 39) {   // right
             craft.rcs_throttle = 100;
             e.preventDefault();
+        }
+        else if (e.which == 40) {   // down
+            craft.rotational_velocity = 0;  // stability control
+            e.preventDefault();
         } else if (e.which == 191) {  // question mark
             show_help = !show_help
             redraw();
@@ -129,7 +133,6 @@
                 raf = window.requestAnimationFrame(animate);
                 var now = new Date();
                 timeSinceLastFrame = now - lastTime;
-                console.log(timeSinceLastFrame);
                 lastTime = now;
             } else {
                 draw_win();
@@ -203,6 +206,8 @@
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
 
+        draw_altitude();
+
         ctx.translate(ctx.canvas.width * 0.5, ctx.canvas.height * 0.5);
         ctx.transform(zoom, 0, 0, zoom, 0, 0 );
 
@@ -253,7 +258,6 @@
         // F = G*((m sub 1*m sub 2)/r^2)
         var F = (6.67*Math.pow(10,-11)) * (obj.mass * well.mass) / Math.pow(dist, 2);
         //var dV = well.g / Math.pow(dist * 2, 2);
-        console.log(F);
 
         obj.velocity.x += F * rel_pos.x / dist;
         obj.velocity.y += F * rel_pos.y / dist;
@@ -361,6 +365,7 @@
         ctx.fillText("[Enter]   Start/Reset", 10, 10 + (line++ * 20));
         ctx.fillText("[g]       Toggle gravity", 10, 10 + (line++ * 20));
         ctx.fillText("[<--/-->] Turn", 10, 10 + (line++ * 20));
+        ctx.fillText("[Down]    Stop rotation", 10, 10 + (line++ * 20));
         ctx.fillText("[Space]   Thrust", 10, 10 + (line++ * 20));
         ctx.restore();
     }
@@ -389,6 +394,19 @@
         ctx.fillText(msg, ctx.canvas.width / 2, 10);
         ctx.restore();
     }
+
+function draw_altitude() {
+    var alt = distance(planet.pos.x, planet.pos.y, craft.pos.x, craft.pos.y) - planet.radius;
+
+    alt = alt - (alt % 5);
+
+    ctx.save();
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "right";
+    ctx.font = "bold 14px Garamond, georgia, serif";
+    ctx.fillText(alt, ctx.canvas.width - 10, 10);
+    ctx.restore();
+}
 
     function draw_planet(p) {
         ctx.save();
