@@ -207,8 +207,8 @@
         var F = (obj.mass * well.g) / Math.pow(dist, 2);
         //var dV = well.g / Math.pow(dist * 2, 2);
 
-        obj.velocity.x += F * rel_pos.x / obj.mass;
-        obj.velocity.y += F * rel_pos.y / obj.mass;
+        obj.velocity.x += F * rel_pos.x / dist;
+        obj.velocity.y += F * rel_pos.y / dist;
     }
 
     function apply_thrust(c) {
