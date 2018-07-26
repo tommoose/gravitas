@@ -82,6 +82,10 @@
         else if (e.which == 39) {   // right
             craft.rcs_throttle = 100;
             e.preventDefault();
+        }
+        else if (e.which == 40) {   // down
+            craft.rotational_velocity = 0;  // stability control
+            e.preventDefault();
         } else if (e.which == 191) {  // question mark
             display_help = !display_help
             redraw();
@@ -311,6 +315,7 @@
         ctx.fillText("[Enter]   Start/Reset", 10, 10 + (line++ * 20));
         ctx.fillText("[g]       Toggle gravity", 10, 10 + (line++ * 20));
         ctx.fillText("[<--/-->] Turn", 10, 10 + (line++ * 20));
+        ctx.fillText("[Down]    Stop rotation", 10, 10 + (line++ * 20));
         ctx.fillText("[Space]   Thrust", 10, 10 + (line++ * 20));
         ctx.restore();
     }
