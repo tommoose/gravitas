@@ -35,6 +35,15 @@
             Math.sin(angle) * (px - ox) + Math.cos(angle) * (py - oy) + oy
         );
     }
+
+    function roundTo(input, num) {
+        var resto = input%num;
+        if (resto <= (num/2)) { 
+            return input-resto;
+        } else {
+            return input+num-resto;
+        }
+    }
     
     var point = function(x, y) {
         return {
@@ -98,6 +107,8 @@
                 zoom = 0.04;
             else
                 zoom = 1;
+            if (!running)
+                redraw();
             e.preventDefault();
         }
         else if (e.which == 84) {   // Z
@@ -157,25 +168,28 @@
         
         craft = setupCraft();
         planet = setupPlanet();
-        gate = setupGate();
+        //gate = setupGate();
         
         redraw();
     }
 
     function setupCraft() {
         return {
-            pos: point(0, setupPlanet().radius * -1), 
+            pos: point(0, setupPlanet().radius * -1 - 100), 
             size: point(30, 30),
-            mass: 1,
+            mass: 100,
+            dry_mass: 20,
+            impulse: point(0,0),
             velocity: point(0,0),
             rotational_velocity: 0,
             rotation_velocity_max: 40,
             color: "rgb(255,255,255)",
             attitude: 0,
             throttle: 0,
-            thrust: 20,
+            thrust: 150000,
             rcs_throttle: 0,
             rcs_thrust: 12,
+            drag_coefficient: 0.2,
         }
     }
 
@@ -195,6 +209,7 @@
             pos: point(ctx.canvas.width * 1 / 4, 0),
             radius: 30,
             mass: 0,
+            impulse: point(0,0),
             velocity: point(0, 0),
             color: "rgb(40,40,255)",
         }
@@ -230,6 +245,8 @@
 
 
             apply_thrust(craft);
+            apply_drag(craft);
+
             update_velocity(craft);
             check_land();
 
@@ -259,8 +276,12 @@
         var F = (6.67*Math.pow(10,-11)) * (obj.mass * well.mass) / Math.pow(dist, 2);
         //var dV = well.g / Math.pow(dist * 2, 2);
 
-        obj.velocity.x += F * rel_pos.x / dist;
-        obj.velocity.y += F * rel_pos.y / dist;
+        //console.log(dist)
+        if (F == 0)
+            running = false;
+
+        obj.impulse.x += F * rel_pos.x / dist;
+        obj.impulse.y += F * rel_pos.y / dist;
     }
 
     function apply_thrust(c) {
@@ -269,11 +290,69 @@
             var thrust_x = c.thrust * Math.cos((c.attitude + 90) * Math.PI / 180) / c.mass * c.throttle / 100;
             var thrust_y = c.thrust * Math.sin((c.attitude + 90) * Math.PI / 180) / c.mass * c.throttle / 100;
             
-            console.log("Thrust: " + thrust_x + ", " + thrust_y);
+            //console.log("Thrust: " + thrust_x + ", " + thrust_y);
 
-            c.velocity.x -= thrust_x;
-            c.velocity.y -= thrust_y;
+            // atmosphere
+
+
+            c.impulse.x -= thrust_x;
+            c.impulse.y -= thrust_y;
         }
+    }
+
+    function apply_drag(c) {
+        
+        //var h = distance(c.pos.x, c.pos.y, planet.pos.x, planet.pos.y) - planet.radius * 0.3048; // to feet
+
+        var T;
+        var atmos = get_atmosphere(c);
+        var h = atmos.altitude;
+
+        switch (atmos.zone) {
+            case 0:
+                T = 15.04 - .00649 * h;        // Troposphere
+                break;
+            case 1:
+                T = -56.46;                    // Lower stratosphere
+                break;
+            default:
+            case 2:
+                T = -131.21 + .00299 * h;   // Upper stratosphere
+                break;
+        }
+        
+        var pressure = 2.488 * Math.pow((T + 273.1)/ 216.6, -11.388);
+
+        var density = pressure / (0.2869 * (T + 273.1));
+
+        var drag_x = c.drag_coefficient * c.size.x * .5 * density * Math.pow(c.velocity.x, 2);
+        var drag_y = c.drag_coefficient * c.size.x * .5 * density * Math.pow(c.velocity.y, 2);
+
+        if (c.velocity.x > 0)
+            craft.impulse.x -= Math.abs(drag_x);
+        else 
+            craft.impulse.x += Math.abs(drag_x);
+
+        if (c.velocity.y > 0)
+            craft.impulse.y -= Math.abs(drag_y);
+        else 
+            craft.impulse.y += Math.abs(drag_y);
+
+        draw_message(drag_x + ":" + drag_y);
+
+        return new point(drag_x, drag_y);
+    }
+
+    function get_atmosphere(c) {
+        var h = distance(c.pos.x, c.pos.y, planet.pos.x, planet.pos.y) - planet.radius; // in meters
+        //var f = h * 3.2808399; // to feet
+
+        if (h <= 11000)
+            return {zone: 0, altitude: h};           // Troposphere
+        else if (h < 25000)
+            return {zone: 1, altitude: h};           // Lower stratosphere
+        else
+            return {zone: 2, altitude: h};           // Upper stratosphere
     }
 
     function apply_rcs(c) {
@@ -286,8 +365,20 @@
     }
 
     function update_velocity(obj) {
-        obj.pos.x += obj.velocity.x * timeSinceLastFrame / 1000;
-        obj.pos.y += obj.velocity.y * timeSinceLastFrame / 1000;
+        var dv_x = obj.impulse.x / obj.mass;
+        var dv_y = obj.impulse.y / obj.mass;
+
+        obj.velocity.x += dv_x;
+        obj.velocity.y += dv_y;
+        
+
+        var d_x = obj.velocity.x * timeSinceLastFrame / 1000;
+        var d_y = obj.velocity.y * timeSinceLastFrame / 1000;
+
+        obj.impulse = point(0,0);
+
+        obj.pos.x += d_x;
+        obj.pos.y += d_y;
     }
 
     function update_rotational_velocity() {
@@ -395,18 +486,21 @@
         ctx.restore();
     }
 
-function draw_altitude() {
-    var alt = distance(planet.pos.x, planet.pos.y, craft.pos.x, craft.pos.y) - planet.radius;
+    function draw_altitude() {
+        var atmos = get_atmosphere(craft);
 
-    alt = alt - (alt % 5);
+        var alt = atmos.altitude;//distance(planet.pos.x, planet.pos.y, craft.pos.x, craft.pos.y) - planet.radius;
+        
 
-    ctx.save();
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "right";
-    ctx.font = "bold 14px Garamond, georgia, serif";
-    ctx.fillText(alt, ctx.canvas.width - 10, 10);
-    ctx.restore();
-}
+        alt = roundTo(alt, 5);
+
+        ctx.save();
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "right";
+        ctx.font = "bold 14px monospace";
+        ctx.fillText(alt + ": (" + atmos.zone + ")", ctx.canvas.width - 50, 10);
+        ctx.restore();
+    }
 
     function draw_planet(p) {
         ctx.save();
@@ -415,10 +509,38 @@ function draw_altitude() {
         ctx.fillStyle = p.color;
         ctx.arc(p.pos.x, p.pos.y, p.radius, 0, 2*Math.PI);
         ctx.fill();
+
+        // Draw surface of planet to give some sense of speed/scale
+        ctx.beginPath();
+
+        var circumfrence = 2 * Math.PI * p.radius;
+        var dashes = 12000;
+        var dash = circumfrence / dashes;
+
+        ctx.setLineDash([dash,dash]);
+        ctx.strokeStyle = "rgb(100,128,255)";
+        ctx.lineWidth = 100;
+
+        var relative_position = offset(p.pos.x, p.pos.y, craft.pos.x, craft.pos.y);
+
+        var angle = Math.atan2(relative_position.y, relative_position.x);
+        //console.log(angle);
+
+        var section = Math.PI / 1280;
+        var lockTo = 4 * Math.PI / dashes;
+
+
+        ctx.arc(p.pos.x, p.pos.y, p.radius, roundTo(angle - section, lockTo), roundTo(angle + section, lockTo));
+
+        ctx.stroke();
+
         ctx.restore();
     }
 
     function draw_gate(g) {
+        if (g == null)
+            return;
+
         ctx.save();
         ctx.beginPath();
 
@@ -444,6 +566,9 @@ function draw_altitude() {
     }
 
     function check_win() {
+        if (gate == null)
+        return false;
+
         if (distance(craft.pos.x, craft.pos.y, gate.pos.x, gate.pos.y) < gate.radius) {
             // Win!
             return true;
