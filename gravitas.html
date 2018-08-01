@@ -1,3 +1,6 @@
+<!--
+    TODO: add clouds, fix drag model
+-->
 <html>
 <head><meta http-equiv="Content-Type" content="text/html; charset=us-ascii">
 	
@@ -176,20 +179,22 @@
     function setupCraft() {
         return {
             pos: point(0, setupPlanet().radius * -1 - 100), 
-            size: point(30, 30),
-            mass: 100,
+            size: point(10,110),//point(30, 30),
+            mass: 2970000,//100,
             dry_mass: 20,
             impulse: point(0,0),
+            delta_vee: point(0,0),
             velocity: point(0,0),
             rotational_velocity: 0,
-            rotation_velocity_max: 40,
+            rotation_velocity_max: 100,
             color: "rgb(255,255,255)",
             attitude: 0,
             throttle: 0,
-            thrust: 150000,
+            thrust: 36000000,//150000,
             rcs_throttle: 0,
-            rcs_thrust: 12,
+            rcs_thrust: 30,
             drag_coefficient: 0.2,
+            drag: point(0,0),
         }
     }
 
@@ -210,6 +215,7 @@
             radius: 30,
             mass: 0,
             impulse: point(0,0),
+            delta_vee: point(0,0),
             velocity: point(0, 0),
             color: "rgb(40,40,255)",
         }
@@ -221,7 +227,6 @@
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
 
-        draw_altitude();
 
         ctx.translate(ctx.canvas.width * 0.5, ctx.canvas.height * 0.5);
         ctx.transform(zoom, 0, 0, zoom, 0, 0 );
@@ -246,6 +251,9 @@
 
             apply_thrust(craft);
             apply_drag(craft);
+
+
+            draw_stats();
 
             update_velocity(craft);
             check_land();
@@ -287,8 +295,8 @@
     function apply_thrust(c) {
         if (c.throttle > 0)
         {
-            var thrust_x = c.thrust * Math.cos((c.attitude + 90) * Math.PI / 180) / c.mass * c.throttle / 100;
-            var thrust_y = c.thrust * Math.sin((c.attitude + 90) * Math.PI / 180) / c.mass * c.throttle / 100;
+            var thrust_x = c.thrust * Math.cos((c.attitude + 90) * Math.PI / 180) * c.throttle / 100;
+            var thrust_y = c.thrust * Math.sin((c.attitude + 90) * Math.PI / 180) * c.throttle / 100;
             
             //console.log("Thrust: " + thrust_x + ", " + thrust_y);
 
@@ -306,53 +314,45 @@
 
         var T;
         var atmos = get_atmosphere(c);
-        var h = atmos.altitude;
 
-        switch (atmos.zone) {
-            case 0:
-                T = 15.04 - .00649 * h;        // Troposphere
-                break;
-            case 1:
-                T = -56.46;                    // Lower stratosphere
-                break;
-            default:
-            case 2:
-                T = -131.21 + .00299 * h;   // Upper stratosphere
-                break;
-        }
-        
-        var pressure = 2.488 * Math.pow((T + 273.1)/ 216.6, -11.388);
+        var drag_x = c.drag_coefficient * c.size.x * .5 * atmos.density * Math.pow(c.velocity.x, 2);
+        var drag_y = c.drag_coefficient * c.size.x * .5 * atmos.density * Math.pow(c.velocity.y, 2);
 
-        var density = pressure / (0.2869 * (T + 273.1));
-
-        var drag_x = c.drag_coefficient * c.size.x * .5 * density * Math.pow(c.velocity.x, 2);
-        var drag_y = c.drag_coefficient * c.size.x * .5 * density * Math.pow(c.velocity.y, 2);
-
-        if (c.velocity.x > 0)
-            craft.impulse.x -= Math.abs(drag_x);
-        else 
-            craft.impulse.x += Math.abs(drag_x);
-
-        if (c.velocity.y > 0)
-            craft.impulse.y -= Math.abs(drag_y);
-        else 
-            craft.impulse.y += Math.abs(drag_y);
-
-        draw_message(drag_x + ":" + drag_y);
-
-        return new point(drag_x, drag_y);
+        c = point(drag_x, drag_y);
     }
 
     function get_atmosphere(c) {
         var h = distance(c.pos.x, c.pos.y, planet.pos.x, planet.pos.y) - planet.radius; // in meters
         //var f = h * 3.2808399; // to feet
+        var atmos = {
+            zone: 0,
+            altitude: h,
+            temperature: 0,
+            pressure: 0,
+            density: 0,
+            };
 
-        if (h <= 11000)
-            return {zone: 0, altitude: h};           // Troposphere
-        else if (h < 25000)
-            return {zone: 1, altitude: h};           // Lower stratosphere
-        else
-            return {zone: 2, altitude: h};           // Upper stratosphere
+
+        if (h <= 11000) {
+            // Troposphere
+            atmos.zone = 0;
+            atmos.temperature = 15.04 - 0.00649 * h;
+            atmos.pressure = 101.29 * Math.pow((atmos.temperature + 273.1) / 288.08, 5.256);
+        } else if (h < 25000) {
+            // Lower stratosphere
+            atmos.zone = 1;
+            atmos.temperature = -56.46;
+            atmos.pressure = 22.65 * Math.exp(1.73 - 0.000157 * h);
+        } else {
+            // Upper stratosphere
+            atmos.zone = 2;
+            atmos.temperature = -131.21 + 0.00299 * h;
+            atmos.pressure = 2.488 * Math.pow((atmos.temperature + 273.1) / 216.6, -11.388);
+        }
+
+        atmos.density = atmos.pressure / (0.2869 * (atmos.temperature + 273.1));
+
+        return atmos;
     }
 
     function apply_rcs(c) {
@@ -365,13 +365,26 @@
     }
 
     function update_velocity(obj) {
-        var dv_x = obj.impulse.x / obj.mass;
-        var dv_y = obj.impulse.y / obj.mass;
+        // drag (N)
+        if (obj.velocity.x > 0)
+            obj.impulse.x -= Math.abs(obj.drag.x);
+        else 
+            obj.impulse.x += Math.abs(obj.drag.x);
 
-        obj.velocity.x += dv_x;
-        obj.velocity.y += dv_y;
+        if (obj.velocity.y > 0)
+            obj.impulse.y -= Math.abs(obj.drag.y);
+        else 
+            obj.impulse.y += Math.abs(obj.drag.y);
+
+        // a (m/s/s)
+        var a_x = obj.impulse.x / obj.mass;
+        var a_y = obj.impulse.y / obj.mass;
+
+        // v (m/s) = v + a * t
+        obj.velocity.x += a_x * timeSinceLastFrame / 1000;
+        obj.velocity.y += a_y * timeSinceLastFrame / 1000;
         
-
+        // pos (m) = v * t
         var d_x = obj.velocity.x * timeSinceLastFrame / 1000;
         var d_y = obj.velocity.y * timeSinceLastFrame / 1000;
 
@@ -432,17 +445,17 @@
     }
 
     function draw_title() {
-        var center = point(ctx.canvas.width / 2, ctx.canvas.height / 4);
+        var center = point(ctx.canvas.width / 2 / zoom, ctx.canvas.height / 4 / zoom);
 
         ctx.save();
         ctx.fillStyle = "#ffffff";
         ctx.textAlign = "center";
-        ctx.font = "bold 48px Garamond, georgia, serif";
-        ctx.fillText("Gravitas", center.x, center.y + 18);
-        ctx.font = "28px Garamond, georgia, serif";
-        ctx.fillText("Press [Space] to Start", center.x, center.y + 86);
-        ctx.font = "18px Garamond, georgia, serif";
-        ctx.fillText("Press [?] for options", center.x, center.y + 116);
+        ctx.font = "bold " + 48 / zoom + "px Garamond, georgia, serif";
+        ctx.fillText("Gravitas", 0, 18 / zoom);
+        ctx.font = 28 / zoom + "px Garamond, georgia, serif";
+        ctx.fillText("Press [Space] to Start", 0, 86 / zoom);
+        ctx.font = 18 / zoom + "px Garamond, georgia, serif";
+        ctx.fillText("Press [?] for options", 0, 116 / zoom);
         ctx.restore();
     }
 
@@ -450,14 +463,14 @@
         ctx.save();
         ctx.fillStyle = "#ffffff";
         ctx.textAlign = "left";
-        ctx.font = "14px monospace";
-        var line = 0;
-        ctx.fillText("[?]       Toggle help", 10, 10 + (line++ * 20));
-        ctx.fillText("[Enter]   Start/Reset", 10, 10 + (line++ * 20));
-        ctx.fillText("[g]       Toggle gravity", 10, 10 + (line++ * 20));
-        ctx.fillText("[<--/-->] Turn", 10, 10 + (line++ * 20));
-        ctx.fillText("[Down]    Stop rotation", 10, 10 + (line++ * 20));
-        ctx.fillText("[Space]   Thrust", 10, 10 + (line++ * 20));
+        ctx.font = 14 / zoom + "px monospace";
+        var line = 0, origin = point(-1 * canvas.width / 2 / zoom, -1 * canvas.height / 2 / zoom), offset = 10 / zoom, gap = 20 / zoom;
+        ctx.fillText("[?]       Toggle help", origin.x + offset, origin.y + offset + (line++ * gap));
+        ctx.fillText("[Enter]   Start/Reset", origin.x + offset, origin.y + offset + (line++ * gap));
+        ctx.fillText("[g]       Toggle gravity", origin.x + offset, origin.y + offset + (line++ * gap));
+        ctx.fillText("[<--/-->] Turn", origin.x + offset, origin.y + offset + (line++ * gap));
+        ctx.fillText("[Down]    Stop rotation", origin.x + offset, origin.y + offset + (line++ * gap));
+        ctx.fillText("[Space]   Thrust", origin.x + offset, origin.y + offset + (line++ * gap));
         ctx.restore();
     }
 
@@ -465,7 +478,7 @@
         ctx.save();
         ctx.fillStyle = "#ffffff";
         ctx.textAlign = "center";
-        ctx.font = "bold 48px Garamond, georgia, serif";
+        ctx.font = "bold " + 48 / zoom + "px Garamond, georgia, serif";
         ctx.fillText("WIN!", craft.pos.x, craft.pos.y + craft.size.y * 1.5);
         ctx.restore();
     }
@@ -481,24 +494,44 @@
         ctx.save();
         ctx.fillStyle = "#ffffff";
         ctx.textAlign = "center";
-        ctx.font = "bold 14px Garamond, georgia, serif";
-        ctx.fillText(msg, ctx.canvas.width / 2, 10);
+        ctx.font = "bold " + 14 / zoom + "px Garamond, georgia, serif";
+        ctx.fillText(msg, ctx.canvas.width / 2 / zoom, 10 / zoom);
         ctx.restore();
     }
 
-    function draw_altitude() {
+    function draw_stats() {
         var atmos = get_atmosphere(craft);
-
-        var alt = atmos.altitude;//distance(planet.pos.x, planet.pos.y, craft.pos.x, craft.pos.y) - planet.radius;
-        
-
-        alt = roundTo(alt, 5);
 
         ctx.save();
         ctx.fillStyle = "#ffffff";
         ctx.textAlign = "right";
-        ctx.font = "bold 14px monospace";
-        ctx.fillText(alt + ": (" + atmos.zone + ")", ctx.canvas.width - 50, 10);
+        ctx.font = "bold " + 14 / zoom + "px monospace";
+
+        var 
+        i = 0,
+        x = (ctx.canvas.width / 2 - 30) / zoom, 
+        y = -1 * (ctx.canvas.height / 2 - 10) / zoom,//craft.pos.y// / zoom,//-1 * zcanvas.width / 2 / zoom, 
+        gap = 20 / zoom;
+
+        ctx.fillText("Mass: " + roundTo(craft.mass, 1) + "kg", x, y + i++ * gap);
+
+        ctx.fillText("Altitude: " + roundTo(atmos.altitude, 1) + "m", x, y + i++ * gap);
+        ctx.fillText("Zone: " + atmos.zone, x, y + i++ * gap);
+        ctx.fillText("Pressure: " + roundTo(atmos.pressure, 1) + "KPa", x, y + i++ * gap);
+        ctx.fillText("Density: " + roundTo(atmos.density, 1) + "kg/m3", x, y + i++ * gap);
+
+        ctx.fillText("X: " + roundTo(craft.pos.x, 1) + "m", x, y + i++ * gap);
+        ctx.fillText("Y: " + roundTo(craft.pos.y, 1) + "m", x, y + i++ * gap);
+
+        ctx.fillText("Fx: " + roundTo(craft.impulse.x, 1) + "N", x, y + i++ * gap);
+        ctx.fillText("Fy: " + roundTo(craft.impulse.y, 1) + "N", x, y + i++ * gap);
+
+        ctx.fillText("Vx: " + roundTo(craft.velocity.x, 1) + "m/s", x, y + i++ * gap);
+        ctx.fillText("Vy: " + roundTo(craft.velocity.y, 1) + "m/s", x, y + i++ * gap);
+
+        ctx.fillText("Dx: " + roundTo(craft.drag.x, 1) + "N", x, y + i++ * gap);
+        ctx.fillText("Dy: " + roundTo(craft.drag.y, 1) + "N", x, y + i++ * gap);
+
         ctx.restore();
     }
 
