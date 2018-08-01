@@ -155,7 +155,7 @@
     }
 
     // particulars
-    var craft, planet, gate;
+    var craft, planet, gate, clouds = [];
     var gravity_on = true, trails_on = false;
     var show_help = false;
     var message = "", message_start = null, k_message_timeout = 3000;
@@ -262,6 +262,10 @@
             update_rotational_velocity(craft);
         }
 
+        if (clouds.length < 2)
+            clouds.push(create_cloud());
+        draw_clouds();
+
         ctx.translate(-1 * craft.pos.x, -1 * craft.pos.y);
 
 
@@ -269,7 +273,6 @@
         draw_gate(gate);
 
         draw_craft();
-
 
 
 
@@ -442,6 +445,41 @@
 
         ctx.fillStyle = craft.color;
         ctx.fill();
+    }
+
+    function create_cloud() {
+        var circumfrence = 2 * Math.PI * planet.radius;
+        var dashes = 12000;
+        var dash = circumfrence / dashes;
+        var cloud_width = 4 / zoom, radius_default = 20 / zoom, radius_jitter = 100 / zoom, center_jitter = 200 / zoom;
+
+        var center = point(0, ctx.canvas.height / 4 / zoom);
+        
+        var cloud = [];
+        for (var i = 0; i < 4; i++) {
+            var c = {
+                origin: point(center.x + (Math.random() - 0.5) * center_jitter, center.y),
+                radius: Math.random() * radius_jitter + radius_default,
+            }
+            cloud.push(c);
+        }
+
+        return cloud;
+    }
+
+    function draw_clouds() {
+
+        ctx.save();
+        ctx.fillStyle = "#ffffff";
+        for (var i = 0; i < clouds.length; i++) {
+            for (var c = 0; c < clouds[i].length; c++) {
+
+                ctx.beginPath();
+                ctx.arc(clouds[i][c].origin.x, clouds[i][c].origin.y, clouds[i][c].radius, Math.PI, 0);
+                ctx.fill();
+            }
+        }
+        ctx.restore();
     }
 
     function draw_title() {
