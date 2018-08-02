@@ -119,7 +119,7 @@
             e.preventDefault();
         } else {    // everything else
             if (show_help)
-                draw_message("Key" + e.which);
+                message = "Key" + e.which;
         }
         
     });
@@ -172,6 +172,8 @@
         craft = setupCraft();
         planet = setupPlanet();
         //gate = setupGate();
+
+        setup_clouds();
         
         redraw();
     }
@@ -221,6 +223,11 @@
         }
     }
 
+    function setup_clouds() {
+        while (clouds.length < 8)
+            clouds.push(create_cloud());
+    }
+
     function redraw() {
         ctx.setTransform(1,0,0,1,0,0);//reset the transform matrix as it is cumulative
         if (!trails_on)
@@ -230,15 +237,6 @@
 
         ctx.translate(ctx.canvas.width * 0.5, ctx.canvas.height * 0.5);
         ctx.transform(zoom, 0, 0, zoom, 0, 0 );
-
-        if (!running)
-            draw_title();
-
-        if (show_help)
-            draw_help();
-
-        if (message != "" && (new Date() - message_start) <= k_message_timeout)
-            draw_message();
         
         if (running) {
             if (gravity_on) {
@@ -253,8 +251,6 @@
             apply_drag(craft);
 
 
-            draw_stats();
-
             update_velocity(craft);
             check_land();
 
@@ -262,20 +258,31 @@
             update_rotational_velocity(craft);
         }
 
-        if (clouds.length < 2)
-            clouds.push(create_cloud());
-        draw_clouds();
-
         ctx.translate(-1 * craft.pos.x, -1 * craft.pos.y);
 
-
         draw_planet(planet);
-        draw_gate(gate);
+
+        draw_clouds();
+
+
+
+        //draw_gate(gate);
 
         draw_craft();
+        
+        // HUD
+        if (!running)
+            draw_title();
+        else
+            draw_stats();
 
+        if (show_help)
+            draw_help();
 
+        // if (message != "" && (new Date() - message_start) <= k_message_timeout)
+        //     draw_text([message], "CC");
 
+        craft.impulse = point(0,0);   // reset
     }
 
     function apply_gravity(obj, well) {
@@ -391,8 +398,6 @@
         var d_x = obj.velocity.x * timeSinceLastFrame / 1000;
         var d_y = obj.velocity.y * timeSinceLastFrame / 1000;
 
-        obj.impulse = point(0,0);
-
         obj.pos.x += d_x;
         obj.pos.y += d_y;
     }
@@ -402,6 +407,7 @@
     }
 
     function draw_craft() {
+        ctx.save();
 
         ctx.beginPath();
 
@@ -445,23 +451,37 @@
 
         ctx.fillStyle = craft.color;
         ctx.fill();
+
+        ctx.restore();
     }
 
     function create_cloud() {
         var circumfrence = 2 * Math.PI * planet.radius;
         var dashes = 12000;
         var dash = circumfrence / dashes;
-        var cloud_width = 4 / zoom, radius_default = 20 / zoom, radius_jitter = 100 / zoom, center_jitter = 200 / zoom;
+        var cloud_spacing = dash / 3, 
+            spacing_jitter = dash / 2,
+            radius_default = dash / 24, 
+            radius_jitter = dash / 8, 
+            center_jitter = dash / 8;
 
-        var center = point(0, ctx.canvas.height / 4 / zoom);
+        var center = point(planet.pos.x, planet.pos.y);
+        center.y -= planet.radius + 1000;   // cumulus (low)
+
+        //center.x -= craft.pos.x;
+        //center.y -= craft.pos.y;
         
-        var cloud = [];
+        var cloud = {
+            circles: [],
+            spacing: cloud_spacing + (Math.random() - 0.5) * spacing_jitter,
+        };
+
         for (var i = 0; i < 4; i++) {
             var c = {
-                origin: point(center.x + (Math.random() - 0.5) * center_jitter, center.y),
+                origin: point(center.x + (Math.random() - 0.5) * center_jitter * (i - 2), center.y),
                 radius: Math.random() * radius_jitter + radius_default,
             }
-            cloud.push(c);
+            cloud.circles.push(c);
         }
 
         return cloud;
@@ -470,46 +490,116 @@
     function draw_clouds() {
 
         ctx.save();
-        ctx.fillStyle = "#ffffff";
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
         for (var i = 0; i < clouds.length; i++) {
-            for (var c = 0; c < clouds[i].length; c++) {
+            for (var c = 0; c < clouds[i].circles.length; c++) {
 
                 ctx.beginPath();
-                ctx.arc(clouds[i][c].origin.x, clouds[i][c].origin.y, clouds[i][c].radius, Math.PI, 0);
+                ctx.arc((clouds[i].circles[c].origin.x + (clouds[i].spacing * (i - (clouds.length / 2)))),
+                    (clouds[i].circles[c].origin.y), 
+                    clouds[i].circles[c].radius, 
+                    Math.PI, 0);
                 ctx.fill();
             }
         }
         ctx.restore();
     }
 
-    function draw_title() {
-        var center = point(ctx.canvas.width / 2 / zoom, ctx.canvas.height / 4 / zoom);
+    function draw_text(lines, location) {
+        var 
+            font = "monospace"
+            fontsize = 14,
+            line = 0,
+            lineheight = fontsize * -1.25,
+            padding = point(0,0);
+
+        // SE
+        var origin = point(
+            (ctx.canvas.width / 2), 
+            (ctx.canvas.height / 2)
+        );
+
+        // SE styles
+        ctx.textAlign = "right";
+
+        // Corners
+        if (location[0] == "N")
+        {
+            origin.y = origin.y * -1;
+            lineheight = lineheight * -1;
+            padding = point(padding.x, lineheight);
+        }
+        else if (location[0] == "C") {
+            origin.y = 0;
+        } else {
+            padding = point(padding.x, lineheight)
+        }
+        
+        if (location[1] == "W")
+        {
+            origin.x = origin.x * -1;
+            ctx.textAlign = "left";
+            padding = point(lineheight, padding.y)
+        }
+        else if (location[1] == "C")
+        {
+            origin.x = 0;
+            ctx.textAlign = "center";
+        } else {
+            padding = point(lineheight * -2, padding.y);
+        }
+
+        // Padding
+        origin.x += padding.x;
+        origin.y += padding.y;
+
+        // Title styles
+        if (location == "CC") {
+            fontsize = 48;
+            lineheight = 48 * 1.25;
+            font = "bold " + fontsize / zoom + "px Garamond, georgia, serif";
+        } else {
+            font = fontsize / zoom + "px monospace";
+        }
+
+        // Transform
+        origin.x = origin.x / zoom;
+        origin.y = origin.y / zoom;
+        lineheight = lineheight / zoom;
+
+        // Translate
+        origin.x += craft.pos.x;
+        origin.y += craft.pos.y;
 
         ctx.save();
+
         ctx.fillStyle = "#ffffff";
-        ctx.textAlign = "center";
-        ctx.font = "bold " + 48 / zoom + "px Garamond, georgia, serif";
-        ctx.fillText("Gravitas", 0, 18 / zoom);
-        ctx.font = 28 / zoom + "px Garamond, georgia, serif";
-        ctx.fillText("Press [Space] to Start", 0, 86 / zoom);
-        ctx.font = 18 / zoom + "px Garamond, georgia, serif";
-        ctx.fillText("Press [?] for options", 0, 116 / zoom);
+        ctx.font = font;
+
+        for (line = 0; line < lines.length; line++) {
+            ctx.fillText(lines[line], origin.x, origin.y + line * lineheight);
+        }
+
         ctx.restore();
     }
 
+    function draw_title() {
+        draw_text(["Gravitas"], "CC");
+        draw_text([
+            "Press [Space] to Start",
+            "Press [?] for options"
+            ], "SC");
+    }
+
     function draw_help() {
-        ctx.save();
-        ctx.fillStyle = "#ffffff";
-        ctx.textAlign = "left";
-        ctx.font = 14 / zoom + "px monospace";
-        var line = 0, origin = point(-1 * canvas.width / 2 / zoom, -1 * canvas.height / 2 / zoom), offset = 10 / zoom, gap = 20 / zoom;
-        ctx.fillText("[?]       Toggle help", origin.x + offset, origin.y + offset + (line++ * gap));
-        ctx.fillText("[Enter]   Start/Reset", origin.x + offset, origin.y + offset + (line++ * gap));
-        ctx.fillText("[g]       Toggle gravity", origin.x + offset, origin.y + offset + (line++ * gap));
-        ctx.fillText("[<--/-->] Turn", origin.x + offset, origin.y + offset + (line++ * gap));
-        ctx.fillText("[Down]    Stop rotation", origin.x + offset, origin.y + offset + (line++ * gap));
-        ctx.fillText("[Space]   Thrust", origin.x + offset, origin.y + offset + (line++ * gap));
-        ctx.restore();
+        draw_text([
+            "[?]       Toggle help", 
+            "[Enter]   Start/Reset", 
+            "[g]       Toggle gravity", 
+            "[<--/-->] Turn", 
+            "[Down]    Stop rotation", 
+            "[Space]   Thrust", 
+        ], "NW");
     }
 
     function draw_win() {
@@ -521,56 +611,28 @@
         ctx.restore();
     }
 
-    function draw_message(msg) {
-        if (msg == null)
-            msg = message;
-        else {
-            message_start = new Date();
-            message = msg;
-        }
-
-        ctx.save();
-        ctx.fillStyle = "#ffffff";
-        ctx.textAlign = "center";
-        ctx.font = "bold " + 14 / zoom + "px Garamond, georgia, serif";
-        ctx.fillText(msg, ctx.canvas.width / 2 / zoom, 10 / zoom);
-        ctx.restore();
-    }
-
     function draw_stats() {
         var atmos = get_atmosphere(craft);
+        draw_text([
+            "Mass: " + roundTo(craft.mass, 1) + "kg",
 
-        ctx.save();
-        ctx.fillStyle = "#ffffff";
-        ctx.textAlign = "right";
-        ctx.font = "bold " + 14 / zoom + "px monospace";
+            "Altitude: " + roundTo(atmos.altitude, 1) + "m",
+            "Zone: " + atmos.zone,
+            "Pressure: " + roundTo(atmos.pressure, 1) + "KPa",
+            "Density: " + roundTo(atmos.density, 1) + "kg/m3",
 
-        var 
-        i = 0,
-        x = (ctx.canvas.width / 2 - 30) / zoom, 
-        y = -1 * (ctx.canvas.height / 2 - 10) / zoom,//craft.pos.y// / zoom,//-1 * zcanvas.width / 2 / zoom, 
-        gap = 20 / zoom;
+            "X: " + roundTo(craft.pos.x, 1) + "m",
+            "Y: " + roundTo(craft.pos.y, 1) + "m",
 
-        ctx.fillText("Mass: " + roundTo(craft.mass, 1) + "kg", x, y + i++ * gap);
+            "Fx: " + roundTo(craft.impulse.x, 1) + "N",
+            "Fy: " + roundTo(craft.impulse.y, 1) + "N",
 
-        ctx.fillText("Altitude: " + roundTo(atmos.altitude, 1) + "m", x, y + i++ * gap);
-        ctx.fillText("Zone: " + atmos.zone, x, y + i++ * gap);
-        ctx.fillText("Pressure: " + roundTo(atmos.pressure, 1) + "KPa", x, y + i++ * gap);
-        ctx.fillText("Density: " + roundTo(atmos.density, 1) + "kg/m3", x, y + i++ * gap);
+            "Vx: " + roundTo(craft.velocity.x, 1) + "m/s",
+            "Vy: " + roundTo(craft.velocity.y, 1) + "m/s",
 
-        ctx.fillText("X: " + roundTo(craft.pos.x, 1) + "m", x, y + i++ * gap);
-        ctx.fillText("Y: " + roundTo(craft.pos.y, 1) + "m", x, y + i++ * gap);
-
-        ctx.fillText("Fx: " + roundTo(craft.impulse.x, 1) + "N", x, y + i++ * gap);
-        ctx.fillText("Fy: " + roundTo(craft.impulse.y, 1) + "N", x, y + i++ * gap);
-
-        ctx.fillText("Vx: " + roundTo(craft.velocity.x, 1) + "m/s", x, y + i++ * gap);
-        ctx.fillText("Vy: " + roundTo(craft.velocity.y, 1) + "m/s", x, y + i++ * gap);
-
-        ctx.fillText("Dx: " + roundTo(craft.drag.x, 1) + "N", x, y + i++ * gap);
-        ctx.fillText("Dy: " + roundTo(craft.drag.y, 1) + "N", x, y + i++ * gap);
-
-        ctx.restore();
+            "Dx: " + roundTo(craft.drag.x, 1) + "N",
+            "Dy: " + roundTo(craft.drag.y, 1) + "N",
+        ], "NE");
     }
 
     function draw_planet(p) {
