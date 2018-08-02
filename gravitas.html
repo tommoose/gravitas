@@ -155,7 +155,7 @@
     }
 
     // particulars
-    var craft, planet, gate, clouds = [];
+    var craft, planet, gate, clouds = {0:[],1:[],2:[]};
     var gravity_on = true, trails_on = false;
     var show_help = false;
     var message = "", message_start = null, k_message_timeout = 3000;
@@ -224,8 +224,14 @@
     }
 
     function setup_clouds() {
-        while (clouds.length < 8)
-            clouds.push(create_cloud());
+        while (clouds[0].length < 30)
+            clouds[0].push(create_cloud_cumulus());
+
+        while (clouds[1].length < 30)
+            clouds[1].push(create_cloud_altocumulus());
+
+        while (clouds[2].length < 30)
+            clouds[2].push(create_cloud_cirrus());
     }
 
     function redraw() {
@@ -455,7 +461,7 @@
         ctx.restore();
     }
 
-    function create_cloud() {
+    function create_cloud_cumulus() {
         var circumfrence = 2 * Math.PI * planet.radius;
         var dashes = 12000;
         var dash = circumfrence / dashes;
@@ -474,6 +480,7 @@
         var cloud = {
             circles: [],
             spacing: cloud_spacing + (Math.random() - 0.5) * spacing_jitter,
+            zone: 0,
         };
 
         for (var i = 0; i < 4; i++) {
@@ -487,19 +494,106 @@
         return cloud;
     }
 
+    function create_cloud_altocumulus() {
+        var circumfrence = 2 * Math.PI * planet.radius;
+        var dashes = 12000;
+        var dash = circumfrence / dashes;
+        var cloud_spacing = dash / 6, 
+            spacing_jitter = dash,
+            radius_default = dash / 48, 
+            radius_jitter = dash / 8, 
+            center_jitter = dash / 8,
+            height_jitter = dash / 24;
+
+        var center = point(planet.pos.x, planet.pos.y);
+        center.y -= planet.radius + 6000;   // altocumulus (medium) [used as zone 0-1 demarkation]
+
+        //center.x -= craft.pos.x;
+        //center.y -= craft.pos.y;
+        
+        var cloud = {
+            circles: [],
+            spacing: cloud_spacing + (Math.random() - 0.5) * spacing_jitter,
+            zone: 1,
+        };
+
+        var height_jitter_val = Math.random();
+
+        for (var i = 0; i < 8; i++) {
+            var c = {
+                origin: point(center.x + (Math.random() - 0.5) * center_jitter * (i - 2), center.y + (height_jitter_val * height_jitter * (i - 2))),
+                radius: Math.random() * radius_jitter + radius_default,
+            }
+            cloud.circles.push(c);
+        }
+
+        return cloud;
+    }
+
+    function create_cloud_cirrus() {
+        var circumfrence = 2 * Math.PI * planet.radius;
+        var dashes = 12000;
+        var dash = circumfrence / dashes;
+        var cloud_spacing = dash / 6, 
+            spacing_jitter = dash,
+            radius_default = dash / 32, 
+            radius_jitter = dash / 32, 
+            center_jitter = dash / 8,
+            height_jitter = dash / 128;
+
+        var center = point(planet.pos.x, planet.pos.y);
+        center.y -= planet.radius + 11000;   // altocumulus (medium) [used as zone 0-1 demarkation]
+
+        //center.x -= craft.pos.x;
+        //center.y -= craft.pos.y;
+        
+        var cloud = {
+            circles: [],
+            spacing: cloud_spacing + (Math.random() - 0.5) * spacing_jitter,
+            zone: 1,
+        };
+
+        var height_jitter_val = Math.random();
+
+        for (var i = 0; i < 8; i++) {
+            var c = {
+                origin: point(center.x + (Math.random() - 0.5) * center_jitter * (i - 2), center.y + (height_jitter_val * height_jitter * (i - 2))),
+                radius: Math.random() * radius_jitter + radius_default,
+            }
+            cloud.circles.push(c);
+        }
+
+        return cloud;
+    }
+
     function draw_clouds() {
 
         ctx.save();
         ctx.fillStyle = "rgba(255,255,255,0.4)";
-        for (var i = 0; i < clouds.length; i++) {
-            for (var c = 0; c < clouds[i].circles.length; c++) {
 
-                ctx.beginPath();
-                ctx.arc((clouds[i].circles[c].origin.x + (clouds[i].spacing * (i - (clouds.length / 2)))),
-                    (clouds[i].circles[c].origin.y), 
-                    clouds[i].circles[c].radius, 
-                    Math.PI, 0);
-                ctx.fill();
+        var angle_start = {
+            0: Math.PI,
+            1: 0,
+            2: 0,
+        }, angle_end = {
+            0: 0,
+            1: 2 * Math.PI,
+            2: 2 * Math.PI,
+        };
+
+        for (var z = 0; z < 3; z++) {
+            for (var i = 0; i < clouds[z].length; i++) {
+                for (var c = 0; c < clouds[z][i].circles.length; c++) {
+
+                    ctx.beginPath();
+                    ctx.arc(
+                        clouds[z][i].circles[c].origin.x + (clouds[z][i].spacing * (i - (clouds[z].length / 2))),
+                        clouds[z][i].circles[c].origin.y, 
+                        clouds[z][i].circles[c].radius, 
+                        angle_start[z],
+                        angle_end[z]);
+                    ctx.fill();
+                }
             }
         }
         ctx.restore();
