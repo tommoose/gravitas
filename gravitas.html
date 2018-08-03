@@ -9,10 +9,10 @@
 	<script>
 	</script>
 </head>
-<body>
-<p><canvas id="canvas" style="margin: auto;"></canvas></p>
-
-<div id="underlay" style="width: 100%; height: 100%; z-index: -1; position: absolute; top: 0; background-color: #292929"></div>
+<body style="margin: 0">
+<div id="underlay" onscroll="OnScrollFunction()" style="width: 100%; height: 100%; overflow:hidden; z-index: -1; position: absolute; top: 0; background-color: #292929">
+    <canvas id="canvas" style="margin: 0; padding: 0"></canvas>
+</div>
 <script>
     var raf, running = false;
     var canvas = document.getElementById('canvas');
@@ -107,14 +107,14 @@
         }
         else if (e.which == 90) {   // Z
             if (zoom == 1)
-                zoom = 0.04;
+                zoom = 25;
             else
                 zoom = 1;
             if (!running)
                 redraw();
             e.preventDefault();
         }
-        else if (e.which == 84) {   // Z
+        else if (e.which == 84) {   // T
             trails_on = !trails_on;
             e.preventDefault();
         } else {    // everything else
@@ -138,6 +138,22 @@
             e.preventDefault();
         }
     });
+
+
+    window.addEventListener('scroll', function(e) {
+        e.preventDefault();
+        //console.log(e);
+    });
+
+    window.addEventListener('mousewheel', function(e) {
+        e.preventDefault();
+        zoom += e.deltaY * 0.001 * zoom
+        if (zoom <= 0.01)
+            zoom = 0.01;
+        
+        if (!running)
+            redraw();
+    });
 		
     var lastTime, timeSinceLastFrame = 0;
     function animate() {
@@ -159,7 +175,7 @@
     var gravity_on = true, trails_on = false;
     var show_help = false;
     var message = "", message_start = null, k_message_timeout = 3000;
-    var zoom = 0.04;
+    var zoom = 25;
 
     reset();
 
@@ -194,7 +210,7 @@
             throttle: 0,
             thrust: 36000000,//150000,
             rcs_throttle: 0,
-            rcs_thrust: 30,
+            rcs_thrust: 30000,
             drag_coefficient: 0.2,
             drag: point(0,0),
         }
@@ -224,7 +240,7 @@
     }
 
     function setup_clouds() {
-        while (clouds[0].length < 30)
+        while (clouds[0].length < 600)
             clouds[0].push(create_cloud_cumulus());
 
         while (clouds[1].length < 30)
@@ -242,7 +258,7 @@
 
 
         ctx.translate(ctx.canvas.width * 0.5, ctx.canvas.height * 0.5);
-        ctx.transform(zoom, 0, 0, zoom, 0, 0 );
+        ctx.transform(1/zoom, 0, 0, 1/zoom, 0, 0 );
         
         if (running) {
             if (gravity_on) {
@@ -472,7 +488,7 @@
             center_jitter = dash / 8;
 
         var center = point(planet.pos.x, planet.pos.y);
-        center.y -= planet.radius + 1000;   // cumulus (low)
+        center.y -= planet.radius + 1000 + (Math.random() - 0.5) * 100;   // cumulus (low)
 
         //center.x -= craft.pos.x;
         //center.y -= craft.pos.y;
@@ -539,7 +555,7 @@
             radius_default = dash / 32, 
             radius_jitter = dash / 32, 
             center_jitter = dash / 8,
-            height_jitter = dash / 128;
+            height_jitter = dash / 32;
 
         var center = point(planet.pos.x, planet.pos.y);
         center.y -= planet.radius + 11000;   // altocumulus (medium) [used as zone 0-1 demarkation]
@@ -585,10 +601,14 @@
             for (var i = 0; i < clouds[z].length; i++) {
                 for (var c = 0; c < clouds[z][i].circles.length; c++) {
 
+                    var relative_position = offset(planet.pos.x, planet.pos.y, clouds[z][i].circles[c].origin.x, clouds[z][i].circles[c].origin.y);
+
+                    var angle = Math.atan2(relative_position.y, relative_position.x);
+
                     ctx.beginPath();
                     ctx.arc(
                         clouds[z][i].circles[c].origin.x + (clouds[z][i].spacing * (i - (clouds[z].length / 2))),
-                        clouds[z][i].circles[c].origin.y, 
+                        clouds[z][i].circles[c].origin.y,// + planet.radius * Math.cos(Math.atan(clouds[z][i].circles[c].origin.x)), 
                         clouds[z][i].circles[c].radius, 
                         angle_start[z],
                         angle_end[z]);
@@ -651,15 +671,15 @@
         if (location == "CC") {
             fontsize = 48;
             lineheight = 48 * 1.25;
-            font = "bold " + fontsize / zoom + "px Garamond, georgia, serif";
+            font = "bold " + fontsize * zoom + "px Garamond, georgia, serif";
         } else {
-            font = fontsize / zoom + "px monospace";
+            font = fontsize * zoom + "px monospace";
         }
 
         // Transform
-        origin.x = origin.x / zoom;
-        origin.y = origin.y / zoom;
-        lineheight = lineheight / zoom;
+        origin.x = origin.x * zoom;
+        origin.y = origin.y * zoom;
+        lineheight = lineheight * zoom;
 
         // Translate
         origin.x += craft.pos.x;
@@ -700,7 +720,7 @@
         ctx.save();
         ctx.fillStyle = "#ffffff";
         ctx.textAlign = "center";
-        ctx.font = "bold " + 48 / zoom + "px Garamond, georgia, serif";
+        ctx.font = "bold " + 48 * zoom + "px Garamond, georgia, serif";
         ctx.fillText("WIN!", craft.pos.x, craft.pos.y + craft.size.y * 1.5);
         ctx.restore();
     }
