@@ -751,8 +751,17 @@
 
     function draw_planet(p) {
         ctx.save();
-        ctx.beginPath();
 
+        var gradient = ctx.createRadialGradient(p.pos.x, p.pos.y, p.radius + 11000, p.pos.x, p.pos.y, p.radius + 100000);
+
+        gradient.addColorStop(0, '#67AEFF');
+        gradient.addColorStop(1, '#292929');
+        ctx.fillStyle = gradient;
+        var width = p.radius + 25000;
+        ctx.fillRect(-2 * width,-2 * width,4 * width, 4 * width);
+        
+
+        ctx.beginPath();
         ctx.fillStyle = p.color;
         ctx.arc(p.pos.x, p.pos.y, p.radius, 0, 2*Math.PI);
         ctx.fill();
