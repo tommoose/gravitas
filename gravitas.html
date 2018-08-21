@@ -105,10 +105,9 @@
     document.addEventListener("keydown", function(e) {
 
         if (e.which == 71) {        // g
-            gravity_on = !gravity_on;
+            gravity_disabled = !gravity_disabled;
             e.preventDefault();
-        }
-        else if (e.which == 13) {   // enter
+        } else if (e.which == 13) {   // enter
             if (!running) {
                 start();
             } else {
@@ -116,30 +115,37 @@
                 reset();
             }
             e.preventDefault();
-        }
-        else if (e.which == 32) {   // space
+        } else if (e.which == 32) {   // space
             if (!running)
                 start();
             craft.throttle = 100;
             e.preventDefault();
-        }
-        else if (e.which == 37) {   // left
+        } else if (e.which == 37) {   // left
             craft.rcs_throttle = -100;
             e.preventDefault();
-        }
-        else if (e.which == 39) {   // right
+        } else if (e.which == 39) {   // right
             craft.rcs_throttle = 100;
             e.preventDefault();
-        }
-        else if (e.which == 40) {   // down
+        } else if (e.which == 40) {   // down
             craft.rotational_velocity = 0;  // stability control
+            e.preventDefault();
+        } else if (e.which == 192) {  // `~
+            craft.throttle = 0;
+            e.preventDefault();
+        } else if (e.which >= 49 && e.which <= 57) {   // 1-9
+            if (!running) start();
+            craft.throttle = (e.which - 48) * 10;
+            e.preventDefault();
+        } else if (e.which == 48) {   // 0
+            if (!running) start();
+            craft.throttle = 100;
             e.preventDefault();
         } else if (e.which == 191) {  // question mark
             show_help = !show_help
             redraw();
             e.preventDefault();
-        }
-        else if (e.which == 90) {   // Z
+        } else if (e.which == 79) {   // O
+            // Zoom:
             if (zoom == 1)
                 zoom = 25;
             else
@@ -147,8 +153,15 @@
             if (!running)
                 redraw();
             e.preventDefault();
-        }
-        else if (e.which == 84) {   // T
+        } else if (e.which == 88) {   // X
+            if (!running) start();
+            craft.throttle = 0;
+            e.preventDefault();
+        } else if (e.which == 90) {   // Z
+            if (!running) start();
+            craft.throttle = 100;
+            e.preventDefault();
+        } else if (e.which == 84) {   // T
             trails_on = !trails_on;
             e.preventDefault();
         } else {    // everything else
@@ -217,8 +230,8 @@
     }
 
     // particulars
-    var craft, planet, gate, clouds = {0:[],1:[],2:[]}, maxClouds = { 0:24000, 1:16000, 2: 6000};
-    var gravity_on = true, trails_on = false, draw_dashes = false;
+    var craft, planet, gate, clouds = {0:[],1:[],2:[]}, maxClouds = { 0:24000, 1:16000, 2: 6000}, exhaust = [];
+    var gravity_on = true, gravity_disabled = false, trails_on = false, draw_dashes = false;
     var show_help = false;
     var message = "", message_start = null, k_message_timeout = 3000;
     var warp = 1000, zoom = 3, zoomlimit_clouds = 800;
@@ -230,6 +243,8 @@
 
         gravity_on = true;
         display_help = false;
+        warp = 1000;
+        zoom = 3;
         
         craft = setupCraft();
         planet = setupPlanet();
@@ -307,7 +322,7 @@
         ctx.transform(1/zoom, 0, 0, 1/zoom, 0, 0 );
         
         if (running) {
-            if (gravity_on) {
+            if (gravity_on && !gravity_disabled) {
                 apply_gravity(craft, planet);
                 if (gate != null)
                     apply_gravity(gate, planet);
@@ -331,13 +346,16 @@
         draw_planet(planet);
 
         if (zoom < zoomlimit_clouds * 2)
+        {
             draw_clouds();
+            draw_exhaust(craft);
+        }
 
 
 
         //draw_gate(gate);
 
-        draw_craft();
+        draw_craft(craft);
         
         // HUD
         if (!running)
@@ -347,6 +365,8 @@
 
         if (show_help)
             draw_help();
+        
+        draw_hud();
 
         // if (message != "" && (new Date() - message_start) <= k_message_timeout)
         //     draw_text([message], "CC");
@@ -354,14 +374,22 @@
         craft.impulse = point(0,0);   // reset
     }
 
-    function apply_gravity(obj, well) {
+    function calculate_gravity(obj, well) {
+        if (gravity_disabled || !gravity_on)
+            return 0;
+
         var rel_pos = offset(obj.pos.x, obj.pos.y, well.pos.x, well.pos.y);
 
         var dist = Math.sqrt(Math.pow(rel_pos.x, 2) + Math.pow(rel_pos.y, 2));
 
         // F = G*((m sub 1*m sub 2)/r^2)
+        return (6.67*Math.pow(10,-11)) * (obj.mass * well.mass) / Math.pow(dist, 2);
+    }
+
+    function apply_gravity(obj, well) {
+        var rel_pos = offset(obj.pos.x, obj.pos.y, well.pos.x, well.pos.y);
+        var dist = Math.sqrt(Math.pow(rel_pos.x, 2) + Math.pow(rel_pos.y, 2));
         var F = (6.67*Math.pow(10,-11)) * (obj.mass * well.mass) / Math.pow(dist, 2);
-        //var dV = well.g / Math.pow(dist * 2, 2);
 
         //console.log(dist)
         if (F == 0)
@@ -374,8 +402,8 @@
     function apply_thrust(c) {
         if (c.throttle > 0)
         {
-            var thrust_x = c.thrust * Math.cos((c.attitude + 90) * Math.PI / 180) * c.throttle / 100;
-            var thrust_y = c.thrust * Math.sin((c.attitude + 90) * Math.PI / 180) * c.throttle / 100;
+            var thrust_x = c.thrust * Math.cos(c.attitude + Math.PI / 2) * c.throttle / 100;
+            var thrust_y = c.thrust * Math.sin(c.attitude + Math.PI / 2) * c.throttle / 100;
             
             //console.log("Thrust: " + thrust_x + ", " + thrust_y);
 
@@ -397,7 +425,7 @@
         var drag_x = c.drag_coefficient * c.size.x * .5 * atmos.density * Math.pow(c.velocity.x, 2);
         var drag_y = c.drag_coefficient * c.size.x * .5 * atmos.density * Math.pow(c.velocity.y, 2);
 
-        c = point(drag_x, drag_y);
+        c.drag = point(drag_x, drag_y);
     }
 
     function get_atmosphere(c) {
@@ -475,38 +503,29 @@
         craft.attitude += craft.rotational_velocity * timeSinceLastFrame / warp;
     }
 
-    function draw_craft() {
+    function draw_craft(c, scale_size) {
         ctx.save();
 
         ctx.beginPath();
 
-        var width = craft.size.x;
-        var height = craft.size.y;
+        var width = c.size.x;
+        var height = c.size.y;
 
         var points = [];
         
-        points.push(point(Math.floor(craft.pos.x - width / 2), Math.floor(craft.pos.y - height / 2)));  // NW
+        points.push(point(Math.floor(c.pos.x - width / 2), Math.floor(c.pos.y - height / 2)));  // NW
         
-        points.push(point(Math.floor(craft.pos.x),Math.floor(craft.pos.y - height)));   // N
+        points.push(point(Math.floor(c.pos.x),Math.floor(c.pos.y - height)));   // N
         
-        points.push(point(Math.floor(craft.pos.x + width / 2),Math.floor(craft.pos.y - height / 2)));   // NE
-        points.push(point(Math.floor(craft.pos.x + width / 2),Math.floor(craft.pos.y + height / 2)));   // SE
+        points.push(point(Math.floor(c.pos.x + width / 2),Math.floor(c.pos.y - height / 2)));   // NE
+        points.push(point(Math.floor(c.pos.x + width / 2),Math.floor(c.pos.y + height / 2)));   // SE
 
-        if (craft.throttle > 0)
-        {
-            points.push(point(Math.floor(craft.pos.x + width * 2 / 6),Math.floor(craft.pos.y + height)));       // Flames 1 outer
-            points.push(point(Math.floor(craft.pos.x + width * 1 / 6),Math.floor(craft.pos.y + height / 2)));   // Flames 2 inner
-            points.push(point(Math.floor(craft.pos.x                ),Math.floor(craft.pos.y + height)));       // Flames 3 outer
-            points.push(point(Math.floor(craft.pos.x - width * 1 / 6),Math.floor(craft.pos.y + height / 2)));   // Flames 4 inner
-            points.push(point(Math.floor(craft.pos.x - width * 2 / 6),Math.floor(craft.pos.y + height)));       // Flames 5 outer
-        }
-
-        points.push(point(Math.floor(craft.pos.x - width / 2),Math.floor(craft.pos.y + height / 2)));   // SW
+        points.push(point(Math.floor(c.pos.x - width / 2),Math.floor(c.pos.y + height / 2)));   // SW
 
         // attitude
         for (var i = 0; i < points.length; i++) {
             var p = points[i],
-                newpoint = rotate_point(p.x, p.y, craft.pos.x, craft.pos.y, (craft.attitude * Math.PI / 180));
+                newpoint = rotate_point(p.x, p.y, c.pos.x, c.pos.y, c.attitude);
             //points[i] = newpoint;
             
             // draw points
@@ -516,12 +535,50 @@
                 ctx.lineTo(newpoint.x, newpoint.y);
         }
 
-        
+        // reset for flames
+        points = [];        
 
-        ctx.fillStyle = craft.color;
+        ctx.fillStyle = c.color;
         ctx.fill();
 
+        if (craft.throttle > 0)
+        {
+            ctx.beginPath();
+            var flameLength = height / 2 * c.throttle / 100;
+
+            points.push(point(Math.floor(c.pos.x + width / 2),Math.floor(c.pos.y + height / 2)));   // SE
+
+            points.push(point(Math.floor(c.pos.x + width * 2 / 6),Math.floor(c.pos.y + height / 2 + flameLength)));       // Flames 1 outer
+            points.push(point(Math.floor(c.pos.x + width * 1 / 6),Math.floor(c.pos.y + height / 2)));   // Flames 2 inner
+            points.push(point(Math.floor(c.pos.x                ),Math.floor(c.pos.y + height / 2 + flameLength)));       // Flames 3 outer
+            points.push(point(Math.floor(c.pos.x - width * 1 / 6),Math.floor(c.pos.y + height / 2)));   // Flames 4 inner
+            points.push(point(Math.floor(c.pos.x - width * 2 / 6),Math.floor(c.pos.y + height / 2 + flameLength)));       // Flames 5 outer
+        
+            points.push(point(Math.floor(c.pos.x - width / 2),Math.floor(c.pos.y + height / 2)));   // SW
+
+
+            // attitude
+            for (var i = 0; i < points.length; i++) {
+                var p = points[i],
+                    newpoint = rotate_point(p.x, p.y, c.pos.x, c.pos.y, c.attitude);
+                //points[i] = newpoint;
+                
+                // draw points
+                if (i == 0)
+                    ctx.moveTo(newpoint.x, newpoint.y);
+                else
+                    ctx.lineTo(newpoint.x, newpoint.y);
+            }
+            
+            ctx.fillStyle = "rgba(155,188,255, 0.5)";
+            ctx.fill();
+        }
+
         ctx.restore();
+    }
+
+    function rotate_points(points) {
+        
     }
 
     function create_cloud_cumulus() {
@@ -529,12 +586,12 @@
             maxClouds[0],   // Max clouds                           (density)
             0,              // Zone
             3/2,            // Cloud spacing jitter                 (ratio to spacing_angle)
-            1000,           // Altitude                             (low)
-            1/4,            // Altitude jitter                      (ratio to circle_radius_default)
+            2000,           // Altitude                             (low)
+            1/256,            // Altitude jitter                      (ratio to circle_radius_default)
             planet.radius,  // Planet radius
-            1/16000,        // Circle radius default                (ratio to planet_radius)
+            1/22000,        // Circle radius default                (ratio to planet_radius)
             4/2,            // Circle radius jitter                 (ratio to circle_radius_default)
-            1/6,            // Circle horizontal position jitter    (ratio to circle_radius_default)
+            1/3,            // Circle horizontal position jitter    (ratio to circle_radius_default)
             4,
         );
     }
@@ -544,9 +601,9 @@
             1,              // Zone
             1/2,            // Cloud spacing jitter                 (ratio to spacing_angle)
             6000,           // Altitude                             (medium)
-            1,            // Altitude jitter                      (ratio to circle_radius_default)
+            1/64,            // Altitude jitter                      (ratio to circle_radius_default)
             planet.radius,  // Planet radius
-            1/24000,        // Circle radius default                (ratio to planet_radius)
+            1/26000,        // Circle radius default                (ratio to planet_radius)
             8/2,            // Circle radius jitter                 (ratio to circle_radius_default)
             1/12,           // Circle horizontal position jitter    (ratio to circle_radius_default)
             8,
@@ -558,7 +615,7 @@
             2,              // Zone
             0,            // Cloud spacing jitter                 (ratio to spacing_angle)
             11000,           // Altitude                            (high)
-            1/2,            // Altitude jitter                      (ratio to circle_radius_default)
+            0,            // Altitude jitter                      (ratio to circle_radius_default)
             planet.radius,  // Planet radius
             1/24000,        // Circle radius default                (ratio to planet_radius)
             1/1,            // Circle radius jitter                 (ratio to circle_radius_default)
@@ -603,12 +660,13 @@
         var horiz_jitter = circle_radius_default * circle_horizontal_position_jitter;
 
         for (var i = 0; i < circles_per_cloud; i++) {
+            var radius_jitter_val = Math.random();
             var c = {
                 origin: polar(
                     (Math.random() - 0.5) * horiz_jitter * (i - 2), 
-                    altitude_radius + (altitude_jitter_val * altitude_jitter * (i - 2))
+                    altitude_radius + (radius_jitter_val * altitude_jitter * circle_radius_default)
                 ),
-                radius: circle_radius_default + Math.random() * circle_radius_jitter,
+                radius: circle_radius_default + radius_jitter_val * circle_radius_jitter,
             }
             cloud.circles.push(c);
         }
@@ -622,11 +680,11 @@
         ctx.fillStyle = "rgba(255,255,255,0.4)";
 
         var angle_start = {
-            0: Math.PI,
+            0: 0,
             1: 0,
             2: 0,
         }, angle_end = {
-            0: 0,
+            0: 2 * Math.PI,
             1: 2 * Math.PI,
             2: 2 * Math.PI,
         };
@@ -637,10 +695,16 @@
                     if (zoom > zoomlimit_clouds && c % 2 == 0)
                         continue;
 
-                    var centre_point = polar_to_point(
+                    var centre_polar = polar(
+                        (clouds[z][i].spacing_angle * (i - (clouds[z].length / 2))) + clouds[z][i].origin_angle + clouds[z][i].circles[c].origin.angle,
                         clouds[z][i].circles[c].origin.radius, 
-                        (clouds[z][i].spacing_angle * (i - (clouds[z].length / 2))) + clouds[z][i].origin_angle + clouds[z][i].circles[c].origin.angle
+                    )
+
+                    var centre_point = polar_to_point(
+                        centre_polar.radius,
+                        centre_polar.angle
                     );
+
                     var circle_radius = clouds[z][i].circles[c].radius;
                     //var relative_position = offset(planet.pos.x, planet.pos.y, clouds[z][i].circles[c].origin.x, clouds[z][i].circles[c].origin.y);
                     var is_circle_in_view = is_point_in_view(centre_point.x, centre_point.y, circle_radius);
@@ -655,7 +719,7 @@
                             ctx.arc(
                                 centre_point.x,
                                 centre_point.y,// + planet.radius * Math.cos(Math.atan(clouds[z][i].circles[c].origin.x)), 
-                                clouds[z][i].circles[c].radius + 0.75, 
+                                clouds[z][i].circles[c].radius * 0.75, 
                                 angle_start[z],
                                 angle_end[z]);
                             ctx.fill();
@@ -675,17 +739,89 @@
                             gradient.addColorStop(1, 'rgba(255,255,255,0)');
                             ctx.fillStyle = gradient;
 
-                            var box_height = circle_radius;
-                            if (draw_circle)
-                                box_height = box_height * 2;
+                            var box_height = circle_radius * 2;
+
+                            var bounds_origin = point(
+                                centre_point.x - circle_radius, 
+                                centre_point.y - circle_radius, 
+                            );
+
+                            // rotate_point(
+                            //     bounds_origin.x, bounds_origin.y,
+                            //     centre_point.x, centre_point.y,
+                            //     centre_polar.angle
+                            // );
                             
-                            ctx.fillRect(centre_point.x - circle_radius, centre_point.y - circle_radius, 2 * circle_radius, box_height);
+                            ctx.fillRect(
+                                bounds_origin.x,
+                                bounds_origin.y,
+                                2 * circle_radius, 
+                                box_height
+                            );
                         }
                     }
                 }
             }
         }
         ctx.restore();
+    }
+
+    function draw_exhaust(c) {
+        var engine_location = point(
+            c.pos.x - c.size.y / 2 * Math.sin(c.attitude),
+            c.pos.y + c.size.y / 2 * Math.cos(c.attitude)
+            );
+        
+        var exhaust_velocity = 1800 , default_radius = c.size.x / 3, expansion_rate = 8000, max_dist = 2000;
+
+        ctx.save();
+
+        var atmosphere = get_atmosphere(c);
+
+        for (var e = 0; e < exhaust.length; e++) {
+            var dist = distance(
+                engine_location.x, engine_location.y, 
+                exhaust[e].centre.x, exhaust[e].centre.y
+            );  // from engines
+
+            if (dist > max_dist)
+            {
+                dist = 0;
+                if (e < c.throttle && Math.floor(atmosphere.pressure) > 0 && exhaust[e].radius <= max_dist)
+                {
+                    exhaust[e] = {centre: engine_location, radius: default_radius};   // reset
+                } else {
+                    exhaust.splice(e, 1);   // reset
+                    continue;
+                }
+            }
+
+            if (exhaust[e].radius >= 0) {
+                ctx.beginPath();
+                ctx.arc(
+                    exhaust[e].centre.x,
+                    exhaust[e].centre.y,
+                    exhaust[e].radius * 100 / Math.floor(atmosphere.pressure),
+                    0,
+                    2 * Math.PI);
+                ctx.fillStyle = "rgba(255,255,255," + 0.1 / 100 * atmosphere.pressure + ")";
+                ctx.fill();
+
+                // translate point for movement (minus craft velocity)
+                var jitter = dist / max_dist * Math.PI  * (Math.random() - 0.5);
+                exhaust[e].centre = point(
+                    exhaust[e].centre.x + (craft.velocity.x / exhaust[e].radius * timeSinceLastFrame / warp) - (exhaust_velocity * Math.random() * timeSinceLastFrame / warp) * Math.sin(c.attitude + jitter),
+                    exhaust[e].centre.y + (craft.velocity.y / exhaust[e].radius * timeSinceLastFrame / warp) + (exhaust_velocity * Math.random() * timeSinceLastFrame / warp) * Math.cos(c.attitude + jitter)
+                )
+
+                exhaust[e].radius += expansion_rate * (dist / max_dist / 2 ) * (Math.random() / 5) * timeSinceLastFrame / warp;
+            }
+        }
+
+        if (Math.floor(atmosphere.pressure) > 0 && c.throttle > 0)
+                exhaust[exhaust.length] = {centre: engine_location, radius: default_radius};   // add exhaust
+
+        ctx.restore()
     }
 
     function draw_text(lines, location) {
@@ -776,12 +912,15 @@
 
     function draw_help() {
         draw_text([
-            "[?]       Toggle help", 
-            "[Enter]   Start/Reset", 
-            "[g]       Toggle gravity", 
-            "[<--/-->] Turn", 
-            "[Down]    Stop rotation", 
-            "[Space]   Thrust", 
+            "[?]                Toggle help", 
+            "[Enter]            Start/Reset", 
+            "[g]                Toggle gravity", 
+            "[<--/-->]          Turn", 
+            "[Down]             Stop rotation", 
+            "[Space]            Thrust", 
+            "[Z/X]              Full/Zero Throttle",
+            "[Scroll]           Zoom",
+            "[Shift-Scroll]     Time warp"
         ], "NW");
     }
 
@@ -796,28 +935,105 @@
 
     function draw_stats() {
         var atmos = get_atmosphere(craft);
+        var extra_length = Math.abs(Math.round(craft.size.y / 2 * Math.cos(relative_angle()), 2));
+
         draw_text([
-            "Mass: " + roundTo(craft.mass, 1) + "kg",
+            "Mass: " + Math.round(craft.mass) + "kg",
+            "Gravity: " + (gravity_disabled ? "[disabled]" : (gravity_on ? Math.round(calculate_gravity(craft, planet)) + "N" : "[Landed]")),
 
-            "Altitude: " + roundTo(atmos.altitude, 1) + "m",
+            "Altitude: " + Math.round(atmos.altitude - extra_length) + "m",
             "Zone: " + atmos.zone,
-            "Pressure: " + roundTo(atmos.pressure, 1) + "KPa",
-            "Density: " + roundTo(atmos.density, 1) + "kg/m3",
+            "Pressure: " + Math.round(atmos.pressure) + "KPa",
+            "Density: " + Math.round(atmos.density) + "kg/m3",
 
-            "X: " + roundTo(craft.pos.x, 1) + "m",
-            "Y: " + roundTo(craft.pos.y, 1) + "m",
+            "X: " + Math.round(craft.pos.x) + "m",
+            "Y: " + Math.round(craft.pos.y) + "m",
 
-            "Fx: " + roundTo(craft.impulse.x, 1) + "N",
-            "Fy: " + roundTo(craft.impulse.y, 1) + "N",
+            "Fx: " + Math.round(craft.impulse.x) + "N",
+            "Fy: " + Math.round(craft.impulse.y) + "N",
 
-            "Vx: " + roundTo(craft.velocity.x, 1) + "m/s",
-            "Vy: " + roundTo(craft.velocity.y, 1) + "m/s",
+            "Vx: " + Math.round(craft.velocity.x) + "m/s",
+            "Vy: " + Math.round(craft.velocity.y) + "m/s",
 
-            "Dx: " + roundTo(craft.drag.x, 1) + "N",
-            "Dy: " + roundTo(craft.drag.y, 1) + "N",
+            "Dx: " + Math.round(craft.drag.x) + "N",
+            "Dy: " + Math.round(craft.drag.y) + "N",
 
             "Warp: " + warp,
+
+            "RelAngle: " + (relative_angle() / Math.PI).toPrecision(2) + " PI",
+            "Extra Length: " + extra_length,
+
+            "FPS: " + (1000 / timeSinceLastFrame).toPrecision(3),
         ], "NE");
+    }
+
+    function draw_hud() {
+        ctx.save();
+
+        var radius = roundTo((ctx.canvas.width / 25) * zoom, 1);
+
+        // SE
+        var origin = point(
+            (ctx.canvas.width / 2) * zoom, 
+            (ctx.canvas.height / 2) * zoom
+        );
+
+        // Margin
+        var margin = radius + (radius / 3);
+        origin.x -= margin;
+        origin.y -= margin;
+
+        // Transform
+        origin.x = origin.x;
+        origin.y = origin.y;
+
+        // Translate
+        origin.x += craft.pos.x;
+        origin.y += craft.pos.y;
+
+        // Padding
+        var padding = radius / 8;
+ 
+        // Background
+        ctx.beginPath();
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.arc(origin.x, origin.y, radius + padding, 0, 2*Math.PI);
+        ctx.fill();
+
+        // ctx.strokeStyle = "#000000";
+        // ctx.lineWidth = 20;
+        // ctx.stroke();
+        
+        // Direction ring
+        ctx.beginPath();
+        ctx.arc(origin.x, origin.y, radius, 0, 2*Math.PI);
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 2 * zoom;
+        ctx.stroke();
+
+        if (Math.abs(craft.velocity.x) > 0 || Math.abs(craft.velocity.y) > 0) {  
+            var ratio = distance(0,0, craft.velocity.x, craft.velocity.y) / radius;
+            var prograde = point(
+                origin.x + craft.velocity.x / ratio,
+                origin.y + craft.velocity.y / ratio
+            );
+
+            ctx.beginPath();
+            ctx.fillStyle = "#FFFFFF";
+            ctx.arc(prograde.x, prograde.y, padding / 2, 0, 2*Math.PI);
+            ctx.fill();
+        }
+
+        var hudcraft = Object.assign({}, craft);
+        hudcraft.pos = origin;
+        hudcraft.size = Object.assign({}, craft.size);
+        var newheight = radius;
+        hudcraft.size.x = (hudcraft.size.x / hudcraft.size.y * newheight) / 2;
+        hudcraft.size.y = newheight;
+
+        draw_craft(hudcraft);
+
+        ctx.restore();
     }
 
     function draw_planet(p) {
@@ -880,23 +1096,28 @@
         ctx.restore();
     }
 
-    function check_land() {
+    function relative_angle() {
         var rel_pos_polar = point_to_polar(planet.pos.x - craft.pos.x, planet.pos.y - craft.pos.y);
-        var rel_angle = craft.attitude - Math.PI / 2 - rel_pos_polar.angle;
-        var extra_length = craft.size.y / 2 * Math.cos(rel_angle);
-        var dist = distance(craft.pos.x, craft.pos.y, planet.pos.x, planet.pos.y);
+        var rel_angle = craft.attitude + Math.PI / 2 - rel_pos_polar.angle;
+
+        return rel_angle;
+    }
+
+    function check_land() {
+
+        var extra_length = Math.abs(craft.size.y / 2 * Math.cos(relative_angle()));
+        var dist = distance(craft.pos.x, craft.pos.y, planet.pos.x, planet.pos.y) - extra_length;
 
 
         var rel_vel = distance(craft.velocity.x, craft.velocity.y, planet.velocity.x, planet.velocity.y);
 
-        if (dist + extra_length <= planet.radius && rel_vel < 100000) {
-            craft.velocity = point(0,0);    // stop the craft
+        if (dist <= planet.radius) {
+            craft.velocity = point(0, 0);    // stop the craft
             craft.rotational_velocity = 0;
             gravity_on = false;
         } else {
             gravity_on = true;
         }
-
     }
 
     function check_win() {
