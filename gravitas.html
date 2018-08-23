@@ -115,6 +115,8 @@
                 reset();
             }
             e.preventDefault();
+        } else if (e.which == 20) {   // Caps
+            isAuto = e.getModifierState("CapsLock");
         } else if (e.which == 32) {   // space
             if (!running)
                 start();
@@ -129,9 +131,6 @@
         } else if (e.which == 40) {   // down
             craft.rotational_velocity = 0;  // stability control
             e.preventDefault();
-        } else if (e.which == 192) {  // `~
-            craft.throttle = 0;
-            e.preventDefault();
         } else if (e.which >= 49 && e.which <= 57) {   // 1-9
             if (!running) start();
             craft.throttle = (e.which - 48) * 10;
@@ -140,9 +139,11 @@
             if (!running) start();
             craft.throttle = 100;
             e.preventDefault();
-        } else if (e.which == 191) {  // question mark
-            show_help = !show_help
-            redraw();
+        } else if (e.which == 65) {   // A
+            autopilot.movement.x = -1;  // Move left
+            e.preventDefault();
+        } else if (e.which == 68) {   // D
+            autopilot.movement.x = 1;  // Move right
             e.preventDefault();
         } else if (e.which == 79) {   // O
             // Zoom:
@@ -152,6 +153,12 @@
                 zoom = 1;
             if (!running)
                 redraw();
+            e.preventDefault();
+        } else if (e.which == 83) {   // S
+            autopilot.movement.y = 1;  // Move down
+            e.preventDefault();
+        } else if (e.which == 87) {   // W
+            autopilot.movement.y = -1;  // Move up
             e.preventDefault();
         } else if (e.which == 88) {   // X
             if (!running) start();
@@ -164,6 +171,14 @@
         } else if (e.which == 84) {   // T
             trails_on = !trails_on;
             e.preventDefault();
+        } else if (e.which == 192) {  // `~
+            craft.throttle = 0;
+            if (!e.getModifierState("Meta"))
+                e.preventDefault();
+        } else if (e.which == 191) {  // question mark
+            show_help = !show_help
+            redraw();
+            e.preventDefault();
         } else {    // everything else
             if (show_help)
                 message = "Key" + e.which;
@@ -175,6 +190,8 @@
         if (e.which == 32) { // space
             craft.throttle = 0;
             e.preventDefault();
+        } else if (e.which == 20) {   // Caps
+            isAuto = e.getModifierState("CapsLock");
         }
         else if (e.which == 37) {   //left
             craft.rcs_throttle = 0;
@@ -235,6 +252,7 @@
     var show_help = false;
     var message = "", message_start = null, k_message_timeout = 3000;
     var warp = 1000, zoom = 3, zoomlimit_clouds = 800;
+    var isAuto = false, autopilot = { altitude: 200, movement: point(0,0) };
 
     reset();
 
@@ -313,15 +331,13 @@
 
     function redraw() {
         ctx.setTransform(1,0,0,1,0,0);//reset the transform matrix as it is cumulative
-        if (!trails_on)
-            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-
-
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
         ctx.translate(ctx.canvas.width * 0.5, ctx.canvas.height * 0.5);
         ctx.transform(1/zoom, 0, 0, 1/zoom, 0, 0 );
         
         if (running) {
+
             if (gravity_on && !gravity_disabled) {
                 apply_gravity(craft, planet);
                 if (gate != null)
@@ -333,6 +349,8 @@
             apply_thrust(craft);
             apply_drag(craft);
 
+            if (isAuto)
+                apply_autopilot(autopilot, craft, planet);
 
             update_velocity(craft);
             check_land();
@@ -372,6 +390,59 @@
         //     draw_text([message], "CC");
 
         craft.impulse = point(0,0);   // reset
+    }
+
+    function apply_autopilot(a, c, p) {
+        var throttletime = 3;
+
+        // Altitude
+        var altitude = distance(p.pos.x, p.pos.y, c.pos.x, c.pos.y) - p.radius - c.size.y / 2;
+        var delta_vee = distance(0, 0, c.velocity.x, c.velocity.y);
+        var total_impulse = c.thrust / c.mass;
+        var radialVelocity = point_to_polar(craft.velocity.x, craft.velocity.y);
+        var distToTarget = (a.altitude - altitude);
+        var timeToTarget = Math.abs(distToTarget) / radialVelocity.radius;
+        var timeToZero = delta_vee / total_impulse;
+
+        var aboveTarget = distToTarget < 0;
+        var tooSlow = timeToTarget > timeToZero;        // TODO: calc velocity/acc
+        var movingAwayFromPlanet = radialVelocity.angle < 0
+
+        var status = aboveTarget ? "above" : "below";
+        status += tooSlow ? " slow" : " fast";
+        status += movingAwayFromPlanet ? " up" : " down";
+
+        console.log(status);
+
+        if (distToTarget < 0) {
+            // Above
+            if (movingAwayFromPlanet)
+                // Moving upwards
+                c.throttle = Math.max(c.throttle - 10, 0); // Throttle down
+            else
+                // Moving downwards
+                if (tooSlow)
+                    // Too slow
+                    c.throttle = Math.max(c.throttle - 10, 0); // Throttle down
+                else
+                    // Too quick
+                    c.throttle = Math.min(c.throttle + 10, 100); // Throttle up
+
+        } else {
+            // Below
+            if (movingAwayFromPlanet)
+                // Moving upwards
+                if (tooSlow)
+                    // Too slow
+                    c.throttle = Math.min(c.throttle + 10, 100); // Throttle up
+                else
+                    // Too quick
+                    c.throttle = Math.max(c.throttle - 10, 0); // Throttle down
+            else
+                // Moving downwards
+                c.throttle = Math.min(c.throttle + 10, 100); // Throttle up
+        }
+        
     }
 
     function calculate_gravity(obj, well) {
@@ -570,7 +641,8 @@
                     ctx.lineTo(newpoint.x, newpoint.y);
             }
             
-            ctx.fillStyle = "rgba(155,188,255, 0.5)";
+            //ctx.fillStyle = "rgba(155,188,255, 0.5)"; // blue
+            ctx.fillStyle = "rgba(250,220,58,0.8)"; // yellow
             ctx.fill();
         }
 
@@ -810,16 +882,17 @@
                 // translate point for movement (minus craft velocity)
                 var jitter = dist / max_dist * Math.PI  * (Math.random() - 0.5);
                 exhaust[e].centre = point(
-                    exhaust[e].centre.x + (craft.velocity.x / exhaust[e].radius * timeSinceLastFrame / warp) - (exhaust_velocity * Math.random() * timeSinceLastFrame / warp) * Math.sin(c.attitude + jitter),
-                    exhaust[e].centre.y + (craft.velocity.y / exhaust[e].radius * timeSinceLastFrame / warp) + (exhaust_velocity * Math.random() * timeSinceLastFrame / warp) * Math.cos(c.attitude + jitter)
+                    exhaust[e].centre.x + (craft.velocity.x / exhaust[e].radius * timeSinceLastFrame / warp) - (exhaust[e].velocity * Math.random() * timeSinceLastFrame / warp) * Math.sin(exhaust[e].angle + jitter),
+                    exhaust[e].centre.y + (craft.velocity.y / exhaust[e].radius * timeSinceLastFrame / warp) + (exhaust[e].velocity * Math.random() * timeSinceLastFrame / warp) * Math.cos(exhaust[e].angle + jitter)
                 )
-
+                
+                // Increase size as it gets further away
                 exhaust[e].radius += expansion_rate * (dist / max_dist / 2 ) * (Math.random() / 5) * timeSinceLastFrame / warp;
             }
         }
 
         if (Math.floor(atmosphere.pressure) > 0 && c.throttle > 0)
-                exhaust[exhaust.length] = {centre: engine_location, radius: default_radius};   // add exhaust
+                exhaust[exhaust.length] = {centre: engine_location, radius: default_radius, angle: c.attitude, velocity: exhaust_velocity};   // add exhaust
 
         ctx.restore()
     }
@@ -963,6 +1036,9 @@
             "RelAngle: " + (relative_angle() / Math.PI).toPrecision(2) + " PI",
             "Extra Length: " + extra_length,
 
+            "Autopilot: " + isAuto,
+            "Throttle: " + craft.throttle,
+
             "FPS: " + (1000 / timeSinceLastFrame).toPrecision(3),
         ], "NE");
     }
@@ -1028,7 +1104,7 @@
         hudcraft.pos = origin;
         hudcraft.size = Object.assign({}, craft.size);
         var newheight = radius;
-        hudcraft.size.x = (hudcraft.size.x / hudcraft.size.y * newheight) / 2;
+        hudcraft.size.x = (hudcraft.size.x / hudcraft.size.y * newheight);
         hudcraft.size.y = newheight;
 
         draw_craft(hudcraft);
