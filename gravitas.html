@@ -378,11 +378,11 @@
         // HUD
         if (!running)
             draw_title();
-        else
-            draw_stats();
 
-        if (show_help)
+        if (show_help) {
             draw_help();
+            draw_stats();
+        }
         
         draw_hud();
 
