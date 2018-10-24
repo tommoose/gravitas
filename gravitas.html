@@ -111,8 +111,12 @@
     function animate() {
         if (running) {
             if (!check_win()) {
-                redraw();
-                raf = window.requestAnimationFrame(animate);
+                if (!check_lose()) {
+                    redraw();
+                    raf = window.requestAnimationFrame(animate);
+                } else {
+                    draw_lose();
+                }
             } else {
                 draw_win();
             }
@@ -325,7 +329,29 @@
         ctx.fillStyle = "#ffffff";
         ctx.textAlign = "center";
         ctx.font = "bold 48px Garamond, georgia, serif";
-        ctx.fillText("WIN!", craft.pos.x, craft.pos.y + craft.size.y * 1.5);
+        ctx.fillText("Win!", craft.pos.x, craft.pos.y + craft.size.y * 2);
+
+        ctx.font = "24px Garamond, georgia, serif";
+        ctx.fillText("Humanity has a bright future among the stars!", craft.pos.x, craft.pos.y + craft.size.y * 3);
+
+        ctx.font = "12px Garamond, georgia, serif";
+        ctx.fillText("Press [Enter] to Reset", craft.pos.x, craft.pos.y + craft.size.y * 4);
+
+        ctx.restore();
+    }
+
+    function draw_lose() {
+        ctx.save();
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.font = "bold 48px Garamond, georgia, serif";
+        ctx.fillText("Whoops!", craft.pos.x, craft.pos.y + craft.size.y * 2);
+
+        ctx.font = "24px Garamond, georgia, serif";
+        ctx.fillText("You crashed, but don't worry, we can build another!", craft.pos.x, craft.pos.y + craft.size.y * 3);
+
+        ctx.font = "12px Garamond, georgia, serif";
+        ctx.fillText("Press [Enter] to Reset", craft.pos.x, craft.pos.y + craft.size.y * 4);
         ctx.restore();
     }
 
@@ -353,6 +379,14 @@
     function check_win() {
         if (distance(craft.pos.x, craft.pos.y, gate.pos.x, gate.pos.y) < gate.radius) {
             // Win!
+            return true;
+        }
+        return false;
+    }
+
+    function check_lose() {
+        if (distance(craft.pos.x, craft.pos.y, planet.pos.x, planet.pos.y) < planet.radius) {
+            // Lose :(
             return true;
         }
         return false;
