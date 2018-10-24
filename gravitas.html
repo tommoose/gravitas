@@ -207,6 +207,24 @@
         draw_craft();
     }
 
+    function update_velocity(obj) {
+
+        // a (m/s/s)
+        var a_x = obj.impulse.x / obj.mass;
+        var a_y = obj.impulse.y / obj.mass;
+
+        // v (m/s) = v + a * t
+        obj.velocity.x += a_x * timeSinceLastFrame / warp;
+        obj.velocity.y += a_y * timeSinceLastFrame / warp;
+        
+        // pos (m) = v * t
+        var d_x = obj.velocity.x * timeSinceLastFrame / warp;
+        var d_y = obj.velocity.y * timeSinceLastFrame / warp;
+
+        obj.pos.x += d_x;
+        obj.pos.y += d_y;
+    }
+
     function apply_gravity_old(obj, well) {
         var rel_pos = offset(obj.pos.x, obj.pos.y, well.pos.x, well.pos.y);
 
