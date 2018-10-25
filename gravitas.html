@@ -51,8 +51,9 @@
     };
 
     function start() {
-            running = true;
-            animate();
+        lastTime = new Date();
+        running = true;
+        animate();
     }
 
     document.addEventListener("keydown", function(e) {
@@ -108,12 +109,16 @@
         }
     });
 		
+    var lastTime, timeSinceLastFrame = 0, warp = 1000;
     function animate() {
         if (running) {
             if (!check_win()) {
                 if (!check_lose()) {
                     redraw();
                     raf = window.requestAnimationFrame(animate);
+                    var now = new Date();
+                    timeSinceLastFrame = now - lastTime;
+                    lastTime = now;                
                 } else {
                     draw_lose();
                 }
@@ -125,7 +130,7 @@
 
     // particulars
     var craft, planet, gate;
-    var gravity_on = true;
+    var gravity_on = true, grav = 20;
     var show_help = false;
 
     reset();
@@ -147,14 +152,14 @@
         return {
             pos: point(ctx.canvas.width / 2, ctx.canvas.height / 4), 
             size: point(30, 30),
-            mass: 100,
+            mass: 50,
             velocity: point(0,0),
             rotational_velocity: 0,
             rotation_velocity_max: 4,
             color: "rgb(255,255,255)",
             attitude: 0,
             throttle: 0,
-            thrust: 20,
+            thrust: 500,
             rcs_throttle: 0,
             rcs_thrust: 20,
             impulse: point(0,0),
@@ -167,6 +172,7 @@
             g: 20,
             radius: 100,
             color: "rgb(60,120,90)",
+            mass: 2000,
         }
     }
 
@@ -184,8 +190,8 @@
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
         if (gravity_on) {
             apply_gravity(craft, planet);
-            if (gate != null)
-                apply_gravity(gate, planet);
+            // if (gate != null)
+            //     apply_gravity(gate, planet);
 
             draw_planet(planet);
         }
@@ -205,6 +211,7 @@
         update_rotational_velocity(craft);
 
         draw_craft();
+        craft.impulse = point(0,0);
     }
 
     function update_velocity(obj) {
@@ -241,14 +248,14 @@
     function apply_gravity(obj, well) {
         var rel_pos = offset(obj.pos.x, obj.pos.y, well.pos.x, well.pos.y);
         var dist = Math.sqrt(Math.pow(rel_pos.x, 2) + Math.pow(rel_pos.y, 2));
-        var F = (6.67*Math.pow(10,-11)) * (obj.mass * well.mass) / Math.pow(dist, 2);
+        var F = grav * (obj.mass * well.mass) / Math.pow(dist, 2);
 
         //console.log(dist)
         if (F == 0)
             running = false;
 
-        obj.impulse.x += F * rel_pos.x / dist;
-        obj.impulse.y += F * rel_pos.y / dist;
+        obj.impulse.x += F * rel_pos.x;// / dist;
+        obj.impulse.y += F * rel_pos.y;// / dist;
     }
 
     function apply_thrust(c) {
@@ -271,10 +278,10 @@
         }
     }
 
-    function update_velocity(obj) {
-        obj.pos.x += obj.velocity.x;
-        obj.pos.y += obj.velocity.y;
-    }
+    // function update_velocity(obj) {
+    //     obj.pos.x += obj.velocity.x;
+    //     obj.pos.y += obj.velocity.y;
+    // }
 
     function update_rotational_velocity() {
         craft.attitude += craft.rotational_velocity;
