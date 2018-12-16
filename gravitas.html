@@ -175,13 +175,16 @@
             craft.throttle = 0;
             if (!e.getModifierState("Meta"))
                 e.preventDefault();
+        } else if (e.which == 190) {   // .
+            warp = 1000;
+            e.preventDefault();
         } else if (e.which == 191) {  // question mark
             show_help = !show_help
             redraw();
             e.preventDefault();
         } else {    // everything else
             if (show_help)
-                message = "Key" + e.which;
+                console.log("Key" + e.which);
         }
         
     });
@@ -352,7 +355,7 @@
             if (isAuto)
                 apply_autopilot(autopilot, craft, planet);
 
-            update_velocity(craft);
+            update_velocity(craft, timeSinceLastFrame);
             check_land();
 
             apply_rcs(craft);
@@ -372,6 +375,8 @@
 
 
         //draw_gate(gate);
+
+        draw_ghost(craft);
 
         draw_craft(craft);
         
@@ -542,7 +547,7 @@
         }
     }
 
-    function update_velocity(obj) {
+    function update_velocity(obj, timeSpan) {
         // drag (N)
         if (obj.velocity.x > 0)
             obj.impulse.x -= Math.abs(obj.drag.x);
@@ -559,22 +564,22 @@
         var a_y = obj.impulse.y / obj.mass;
 
         // v (m/s) = v + a * t
-        obj.velocity.x += a_x * timeSinceLastFrame / warp;
-        obj.velocity.y += a_y * timeSinceLastFrame / warp;
+        obj.velocity.x += a_x * timeSpan / warp;
+        obj.velocity.y += a_y * timeSpan / warp;
         
         // pos (m) = v * t
-        var d_x = obj.velocity.x * timeSinceLastFrame / warp;
-        var d_y = obj.velocity.y * timeSinceLastFrame / warp;
+        var d_x = obj.velocity.x * timeSpan / warp;
+        var d_y = obj.velocity.y * timeSpan / warp;
 
         obj.pos.x += d_x;
         obj.pos.y += d_y;
     }
 
-    function update_rotational_velocity() {
-        craft.attitude += craft.rotational_velocity * timeSinceLastFrame / warp;
+    function update_rotational_velocity(c) {
+        c.attitude += c.rotational_velocity * timeSinceLastFrame / warp;
     }
 
-    function draw_craft(c, scale_size) {
+    function draw_craft(c) {
         ctx.save();
 
         ctx.beginPath();
@@ -612,7 +617,7 @@
         ctx.fillStyle = c.color;
         ctx.fill();
 
-        if (craft.throttle > 0)
+        if (c.throttle > 0)
         {
             ctx.beginPath();
             var flameLength = height / 2 * c.throttle / 100;
@@ -647,6 +652,79 @@
         }
 
         ctx.restore();
+    }
+
+    function draw_ghost(c) {
+        var t_max = 5000, points_max = 10000;
+        var increment = 100; // ms
+        var points = 0;
+        var c_ghost = jsonCopy(c);
+        var apoapsis = point(0,0), periapsis = point(0,0);
+        var ap_found = false, per_found = false;
+
+        ctx.strokeStyle = "rgba(250,220,58,0.8)"; // yellow
+        ctx.lineWidth = 1 * zoom;
+        ctx.beginPath();
+
+        var current_dir = 0;
+
+        while (points < points_max) {
+
+            // var vel = c_ghost.velocity;
+
+            ctx.lineTo(
+                c_ghost.pos.x,
+                c_ghost.pos.y);
+
+            var pos_prev = c_ghost.pos;
+            var pol_prev = point_to_polar(c_ghost.pos.x, c_ghost.pos.y)
+
+            //if (!is_point_in_view(c_ghost.pos.x, c_ghost.pos.y)) break;
+            //if (is_point_in_planet(c_ghost.pos, planet)) break;
+            
+            c_ghost.impulse = point(0,0);   // reset
+            // update_velocity will change position, let's recalculate the drag and gravity
+            apply_drag(c_ghost);
+            apply_gravity(c_ghost, planet);
+            // apply_thrust(c_ghost);
+
+
+            update_velocity(c_ghost, increment);
+
+            var pol_next = point_to_polar(c_ghost.pos.x, c_ghost.pos.y)
+            var infl = pol_next.radius - pol_prev.radius;
+
+            if (current_dir == 0) {
+                current_dir = infl;
+            }
+            else if (infl > 0 && current_dir < 0 && !per_found) {
+                // found next - periapsis
+                periapsis = pos_prev;
+                per_found = true;
+                ctx.arc(periapsis.x, periapsis.y, c_ghost.size.x * zoom, 0, Math.PI * 2);
+            }
+            else if (infl < 0 && current_dir > 0 && !ap_found) {
+                // found next - apoapsis
+                apoapsis = pos_prev;
+                ap_found = true;
+                ctx.arc(apoapsis.x, apoapsis.y, c_ghost.size.x * zoom, 0, Math.PI * 2);
+            }
+
+            points += 1;
+        }
+
+        ctx.stroke();
+        
+        // ctx.beginPath();
+        // ctx.strokeStyle = "rgba(250,220,58,0.8)"; // yellow
+        // ctx.arc(apoapsis.x, apoapsis.y, c.size.x * zoom, 0, 2*Math.PI);
+        // ctx.arc(periapsis.x, periapsis.y, c.size.x * zoom, 0, 2*Math.PI);
+        // ctx.stroke();
+
+    }
+    
+    function jsonCopy(src) {
+        return JSON.parse(JSON.stringify(src));
     }
 
     function rotate_points(points) {
@@ -1177,6 +1255,10 @@
         var rel_angle = craft.attitude + Math.PI / 2 - rel_pos_polar.angle;
 
         return rel_angle;
+    }
+
+    function is_point_in_planet(pt, pl) {
+        return distance(pt.x, pt.y, pl.pos.x, pl.pos.y) <= pl.radius;
     }
 
     function check_land() {
