@@ -111,8 +111,13 @@
             if (!running) {
                 start();
             } else {
-                // Reset
-                reset();
+                if (e.getModifierState("Shift")) {
+                    // Parking orbit
+                    reset_to_orbit();
+                } else {
+                    // Reset
+                    reset();
+                }
             }
             e.preventDefault();
         } else if (e.which == 20) {   // Caps
@@ -276,6 +281,13 @@
         redraw();
     }
 
+    function reset_to_orbit() {
+        craft.pos = point(4629387, -5386443);
+        craft.attitude = Math.PI / 2;
+        craft.velocity = point(5466, 4845);
+        zoom = 40000;
+    }
+
     function setupCraft() {
         return {
             pos: point(0, setupPlanet().radius * -1 - 55), 
@@ -295,6 +307,10 @@
             rcs_thrust: 300000,
             drag_coefficient: 0.2,
             drag: point(0,0),
+            apoapsis: point(0,0),
+            time_to_apoapsis: -1,
+            periapsis: point(0,0),
+            time_to_periapsis: -1,
         }
     }
 
@@ -378,7 +394,18 @@
 
         draw_ghost(craft);
 
-        draw_craft(craft);
+        draw_nodes(craft);
+
+        if (zoom > 50) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(craft.pos.x, craft.pos.y, 2 * zoom, 0, 2* Math.PI);
+            ctx.fillStyle = "rgba(255,255,255,0.8)";
+            ctx.fill();
+            ctx.restore();
+        } else {
+            draw_craft(craft);
+        }
         
         // HUD
         if (!running)
@@ -655,8 +682,8 @@
     }
 
     function draw_ghost(c) {
-        var t_max = 5000, points_max = 10000;
-        var increment = 100; // ms
+        var t_max = 5000, points_max = 10 * zoom;
+        var increment = 0.25 * warp; // ms
         var points = 0;
         var c_ghost = jsonCopy(c);
         var apoapsis = point(0,0), periapsis = point(0,0);
@@ -664,7 +691,10 @@
 
         ctx.strokeStyle = "rgba(250,220,58,0.8)"; // yellow
         ctx.lineWidth = 1 * zoom;
+        ctx.save();
         ctx.beginPath();
+
+        var currentAngle = point_to_polar(c.pos.x, c.pos.y).angle, totalAngle = 0, minAngle = 5, maxAngle = -5;
 
         var current_dir = 0;
 
@@ -680,7 +710,7 @@
             var pol_prev = point_to_polar(c_ghost.pos.x, c_ghost.pos.y)
 
             //if (!is_point_in_view(c_ghost.pos.x, c_ghost.pos.y)) break;
-            //if (is_point_in_planet(c_ghost.pos, planet)) break;
+            if (is_point_in_planet(c_ghost.pos, planet)) break;
             
             c_ghost.impulse = point(0,0);   // reset
             // update_velocity will change position, let's recalculate the drag and gravity
@@ -694,26 +724,75 @@
             var pol_next = point_to_polar(c_ghost.pos.x, c_ghost.pos.y)
             var infl = pol_next.radius - pol_prev.radius;
 
+            totalAngle += Math.abs(pol_next.angle - pol_prev.angle);
+
             if (current_dir == 0) {
                 current_dir = infl;
+                
+                // if (current_dir < 0)
+                //     console.log("going down");
+                // else
+                //     console.log("going up");
             }
-            else if (infl > 0 && current_dir < 0 && !per_found) {
-                // found next - periapsis
-                periapsis = pos_prev;
-                per_found = true;
-                ctx.arc(periapsis.x, periapsis.y, c_ghost.size.x * zoom, 0, Math.PI * 2);
+            else if (current_dir < 0) {
+                if (infl > 0) {
+                    if (!per_found) {
+                        // found point going up - periapsis
+                        // console.log("going up in " + (points * increment / 1000).toPrecision(2) + "secs")
+                        c.periapsis = point(pos_prev.x, pos_prev.y);
+                        per_found = true;
+                        // ctx.arc(periapsis.x, periapsis.y, c_ghost.size.x * zoom, 0, Math.PI * 2);
+                        // console.log("angle at periapsis: " + (Math.abs(point_to_polar(c.pos.x, c.pos.y).angle - pol_next.angle) / Math.PI).toPrecision(2) + "PI");
+                    } else if (ap_found){
+                        // break;
+                    }
+                } else if (per_found && !ap_found) {
+                    // found point going down after periapsis - apoapsis
+                    c.apoapsis = point(pos_prev.x, pos_prev.y);
+                    ap_found = true;                        
+                }
             }
-            else if (infl < 0 && current_dir > 0 && !ap_found) {
-                // found next - apoapsis
-                apoapsis = pos_prev;
-                ap_found = true;
-                ctx.arc(apoapsis.x, apoapsis.y, c_ghost.size.x * zoom, 0, Math.PI * 2);
+            else if (current_dir > 0) {
+                if (infl < 0) {
+                    if (!ap_found) {
+                        // console.log("going down in " + (points * increment / 1000).toPrecision(2) + "secs")
+                        // found point going down - apoapsis
+                        c.apoapsis = point(pos_prev.x, pos_prev.y);
+                        ap_found = true;
+                        // ctx.arc(apoapsis.x, apoapsis.y, c_ghost.size.x * zoom, 0, Math.PI * 2);
+                        // console.log("angle at apoapsis: " + (Math.abs(point_to_polar(c.pos.x, c.pos.y).angle - pol_next.angle) / Math.PI).toPrecision(2) + "PI");
+                    } else if (per_found){
+                        // break;
+                    }
+                } else if (ap_found && !per_found) {
+                    // found point going up after apoapsis - periapsis
+                    c.periapsis = point(pos_prev.x, pos_prev.y);
+                    per_found = true;
+                }
             }
+
+            //var nextAngle = pol_next.angle + currentAngle;
+            // if (nextAngle < -1 * Math.PI) nextAngle += Math.PI;
+            // if (nextAngle > Math.PI) nextAngle -= Math.PI;
+            minAngle = Math.min(minAngle, pol_next.angle);//nextAngle);
+            maxAngle = Math.max(maxAngle, pol_next.angle);//nextAngle);
+
+            if ((ap_found || per_found) && pol_next.angle.toPrecision(3) == currentAngle.toPrecision(3)) {
+                console.log("full circle after " + points + "points");
+                break;  // full circle
+            }
+            
+            if (Math.abs((c.pos.x, c.pos.y).angle - pol_next.angle) > Math.PI * 2) break;    // only one full rotation
+             
 
             points += 1;
         }
 
+        // if (points > 100)
+        //     console.log("break after " + points + "points");
+
         ctx.stroke();
+        ctx.restore();
         
         // ctx.beginPath();
         // ctx.strokeStyle = "rgba(250,220,58,0.8)"; // yellow
@@ -721,6 +800,20 @@
         // ctx.arc(periapsis.x, periapsis.y, c.size.x * zoom, 0, 2*Math.PI);
         // ctx.stroke();
 
+    }
+
+    function draw_nodes(c) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(c.apoapsis.x, c.apoapsis.y, 2 * zoom + 2, 0, 2* Math.PI);
+        ctx.strokeStyle = "rgba(250,58,220,0.8)";
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(c.periapsis.x, c.periapsis.y, 2 * zoom + 2, 0, 2* Math.PI);
+        ctx.strokeStyle = "rgba(58,250,220,0.8)";
+        ctx.stroke();
+        ctx.restore();
     }
     
     function jsonCopy(src) {
