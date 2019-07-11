@@ -218,7 +218,6 @@
         }
     });
 
-
     window.addEventListener('scroll', function(e) {
         e.preventDefault();
         //console.log(e);
@@ -249,24 +248,20 @@
     var lastTime, timeSinceLastFrame = 0;
     function animate() {
         if (running) {
-            if (!check_win()) {
-                redraw();
-                raf = window.requestAnimationFrame(animate);
-                var now = new Date();
-                timeSinceLastFrame = now - lastTime;
-                lastTime = now;
-            } else {
-                draw_win();
-            }
+            redraw();
+            raf = window.requestAnimationFrame(animate);
+            var now = new Date();
+            timeSinceLastFrame = now - lastTime;
+            lastTime = now;
         }
     }
 
     // particulars
-    var craft, planet, gate, clouds = {0:[],1:[],2:[]}, maxClouds = { 0:24000, 1:16000, 2: 6000}, exhaust = [];
+    var craft, planet, clouds = {0:[],1:[],2:[]}, maxClouds = { 0:24000, 1:16000, 2: 6000}, exhaust = [];
     var gravity_on = true, gravity_disabled = false, trails_on = false, draw_dashes = false;
     var show_help = false;
     var message = "", message_start = null, k_message_timeout = 3000;
-    var warp = 1000, zoom = 3, zoomlimit_clouds = 800;
+    var warp = 1000, zoom = 3, zoomlimit_clouds = 1600;
     var isAuto = false, autopilot = { altitude: 200, movement: point(0,0) };
 
     reset();
@@ -281,7 +276,6 @@
         
         craft = setupCraft();
         planet = setupPlanet();
-        //gate = setupGate();
 
         setup_clouds();
         
@@ -307,6 +301,8 @@
             rotational_velocity: 0,
             rotation_velocity_max: 100,
             color: "rgb(255,255,255)",
+            flame_spectrum: "rgba(250,220,58,0.8)", // Kerosene
+            //flame_spectrum: "rgba(155,188,255, 0.5)",   // Methane
             attitude: 0,
             throttle: 0,
             thrust: 50000000,//36000000,//150000,
@@ -334,18 +330,6 @@
         }
     }
 
-    function setupGate() {
-        return {
-            pos: point(ctx.canvas.width * 1 / 4, 0),
-            radius: 30,
-            mass: 0,
-            impulse: point(0,0),
-            delta_vee: point(0,0),
-            velocity: point(0, 0),
-            color: "rgb(40,40,255)",
-        }
-    }
-
     function setup_clouds() {
         while (clouds[0].length < maxClouds[0])
             clouds[0].push(create_cloud_cumulus());
@@ -368,11 +352,7 @@
 
             if (gravity_on && !gravity_disabled) {
                 apply_gravity(craft, planet);
-                if (gate != null)
-                    apply_gravity(gate, planet);
-
             }
-
 
             apply_thrust(craft);
             apply_drag(craft);
@@ -381,6 +361,7 @@
                 apply_autopilot(autopilot, craft, planet);
 
             update_velocity(craft, timeSinceLastFrame);
+            apply_velocity(craft, timeSinceLastFrame);
             check_land();
 
             apply_rcs(craft);
@@ -391,29 +372,21 @@
 
         draw_planet(planet);
 
-        if (zoom < zoomlimit_clouds * 2)
+        if (zoom < zoomlimit_clouds)
         {
             draw_clouds();
             draw_exhaust(craft);
         }
-
-
-
-        //draw_gate(gate);
 
         draw_trajectory(craft);
 
         draw_nodes(craft);
 
         if (zoom > 50) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(craft.pos.x, craft.pos.y, 2 * zoom, 0, 2* Math.PI);
-            ctx.fillStyle = "rgba(255,255,255,0.8)";
-            ctx.fill();
-            ctx.restore();
+            draw_craft_dot(craft);
         } else {
             draw_craft(craft);
+            draw_flames(craft);
         }
         
         // HUD
@@ -426,9 +399,6 @@
         }
         
         draw_hud();
-
-        // if (message != "" && (new Date() - message_start) <= k_message_timeout)
-        //     draw_text([message], "CC");
 
         craft.impulse = point(0,0);   // reset
     }
@@ -584,6 +554,8 @@
     }
 
     function update_velocity(obj, timeSpan) {
+        // update the velocity based on the forces being applied
+
         // drag (N)
         if (obj.velocity.x > 0)
             obj.impulse.x -= Math.abs(obj.drag.x);
@@ -602,7 +574,10 @@
         // v (m/s) = v + a * t
         obj.velocity.x += a_x * timeSpan / warp;
         obj.velocity.y += a_y * timeSpan / warp;
-        
+    }
+
+    function apply_velocity(obj, timeSpan) {
+        // update the position based on the velocity
         // pos (m) = v * t
         var d_x = obj.velocity.x * timeSpan / warp;
         var d_y = obj.velocity.y * timeSpan / warp;
@@ -615,9 +590,17 @@
         c.attitude += c.rotational_velocity * timeSinceLastFrame / warp;
     }
 
+    function draw_craft_dot(c) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(craft.pos.x, craft.pos.y, 2 * zoom, 0, 2* Math.PI);
+        ctx.fillStyle = "rgba(255,255,255,0.8)";
+        ctx.fill();
+        ctx.restore();
+    }
+
     function draw_craft(c) {
         ctx.save();
-
         ctx.beginPath();
 
         var width = c.size.x;
@@ -625,19 +608,19 @@
 
         var points = [];
         
-        points.push(point(Math.floor(c.pos.x - width / 2), Math.floor(c.pos.y - height / 2)));  // NW
+        points.push(point(0 - width / 2, 0 - height / 2));   // NW
         
-        points.push(point(Math.floor(c.pos.x),Math.floor(c.pos.y - height)));   // N
+        points.push(point(            0, 0 - height));       // N
         
-        points.push(point(Math.floor(c.pos.x + width / 2),Math.floor(c.pos.y - height / 2)));   // NE
-        points.push(point(Math.floor(c.pos.x + width / 2),Math.floor(c.pos.y + height / 2)));   // SE
+        points.push(point(    width / 2, 0 - height / 2));   // NE
+        points.push(point(    width / 2,     height / 2));   // SE
 
-        points.push(point(Math.floor(c.pos.x - width / 2),Math.floor(c.pos.y + height / 2)));   // SW
+        points.push(point(0 - width / 2,     height / 2));   // SW
 
         // attitude
         for (var i = 0; i < points.length; i++) {
             var p = points[i],
-                newpoint = rotate_point(p.x, p.y, c.pos.x, c.pos.y, c.attitude);
+                newpoint = rotate_point(c.pos.x + p.x, c.pos.y + p.y, c.pos.x, c.pos.y, c.attitude);
             //points[i] = newpoint;
             
             // draw points
@@ -647,32 +630,42 @@
                 ctx.lineTo(newpoint.x, newpoint.y);
         }
 
-        // reset for flames
-        points = [];        
-
         ctx.fillStyle = c.color;
         ctx.fill();
 
-        if (c.throttle > 0)
+        ctx.restore();
+    }
+
+    function draw_flames(c) {
+        
+        if (c.throttle > 0 && typeof(c.flame_spectrum) !== "undefined")
         {
+            var points = [];
+
+            ctx.save();
             ctx.beginPath();
+
+            var width = c.size.x;
+            var height = c.size.y;
+            var y_aft = c.pos.y + height / 2;
             var flameLength = height / 2 * c.throttle / 100;
 
-            points.push(point(Math.floor(c.pos.x + width / 2),Math.floor(c.pos.y + height / 2)));   // SE
 
-            points.push(point(Math.floor(c.pos.x + width * 2 / 6),Math.floor(c.pos.y + height / 2 + flameLength)));       // Flames 1 outer
-            points.push(point(Math.floor(c.pos.x + width * 1 / 6),Math.floor(c.pos.y + height / 2)));   // Flames 2 inner
-            points.push(point(Math.floor(c.pos.x                ),Math.floor(c.pos.y + height / 2 + flameLength)));       // Flames 3 outer
-            points.push(point(Math.floor(c.pos.x - width * 1 / 6),Math.floor(c.pos.y + height / 2)));   // Flames 4 inner
-            points.push(point(Math.floor(c.pos.x - width * 2 / 6),Math.floor(c.pos.y + height / 2 + flameLength)));       // Flames 5 outer
+            points.push(point(    width / 2    , 0));   // Start
+
+            points.push(point(    width * 2 / 6, flameLength));       // Flames 1 outer
+            points.push(point(    width * 1 / 6, 0));   // Flames 2 inner
+            points.push(point(0                , flameLength));       // Flames 3 outer
+            points.push(point(0 - width * 1 / 6, 0));   // Flames 4 inner
+            points.push(point(0 - width * 2 / 6, flameLength));       // Flames 5 outer
         
-            points.push(point(Math.floor(c.pos.x - width / 2),Math.floor(c.pos.y + height / 2)));   // SW
+            points.push(point(0 - width / 2    , 0));   // End
 
 
             // attitude
             for (var i = 0; i < points.length; i++) {
                 var p = points[i],
-                    newpoint = rotate_point(p.x, p.y, c.pos.x, c.pos.y, c.attitude);
+                    newpoint = rotate_point(c.pos.x + p.x, y_aft + p.y, c.pos.x, c.pos.y, c.attitude);
                 //points[i] = newpoint;
                 
                 // draw points
@@ -682,12 +675,11 @@
                     ctx.lineTo(newpoint.x, newpoint.y);
             }
             
-            //ctx.fillStyle = "rgba(155,188,255, 0.5)"; // blue
-            ctx.fillStyle = "rgba(250,220,58,0.8)"; // yellow
+            ctx.fillStyle = c.flame_spectrum;
             ctx.fill();
-        }
 
-        ctx.restore();
+            ctx.restore();
+        }
     }
 
     function draw_trajectory(c) {
@@ -718,17 +710,16 @@
             var pos_prev = c_ghost.pos;
             var pol_prev = point_to_polar(c_ghost.pos.x, c_ghost.pos.y)
 
-            //if (!is_point_in_view(c_ghost.pos.x, c_ghost.pos.y)) break;
             if (is_point_in_planet(c_ghost.pos, planet)) break;
             
-            c_ghost.impulse = point(0,0);   // reset
-            // update_velocity will change position, let's recalculate the drag and gravity
+            // let's recalculate the forces at this point
+            c_ghost.impulse = point(0,0);   // reset forces
             apply_drag(c_ghost);
             apply_gravity(c_ghost, planet);
-            // apply_thrust(c_ghost);
-
+            // do not apply thrust, since this is a ballistic trajectory
 
             update_velocity(c_ghost, increment);
+            apply_velocity(c_ghost, increment);
 
             var pol_next = point_to_polar(c_ghost.pos.x, c_ghost.pos.y)
             var infl = pol_next.radius - pol_prev.radius;
@@ -870,10 +861,6 @@
     
     function jsonCopy(src) {
         return JSON.parse(JSON.stringify(src));
-    }
-
-    function rotate_points(points) {
-        
     }
 
     function create_cloud_cumulus() {
@@ -1346,6 +1333,7 @@
         hudcraft.size.y = newheight;
 
         draw_craft(hudcraft);
+        draw_flames(hudcraft);
 
         ctx.restore();
     }
@@ -1396,20 +1384,6 @@
         ctx.restore();
     }
 
-    function draw_gate(g) {
-        if (g == null)
-            return;
-
-        ctx.save();
-        ctx.beginPath();
-
-        ctx.strokeStyle = g.color;
-        ctx.lineWidth = g.radius / 10;
-        ctx.arc(g.pos.x, g.pos.y, g.radius, 0, 2*Math.PI);
-        ctx.stroke();
-        ctx.restore();
-    }
-
     function relative_angle() {
         var rel_pos_polar = point_to_polar(planet.pos.x - craft.pos.x, planet.pos.y - craft.pos.y);
         var rel_angle = craft.attitude + Math.PI / 2 - rel_pos_polar.angle;
@@ -1436,17 +1410,6 @@
         } else {
             gravity_on = true;
         }
-    }
-
-    function check_win() {
-        if (gate == null)
-        return false;
-
-        if (distance(craft.pos.x, craft.pos.y, gate.pos.x, gate.pos.y) < gate.radius) {
-            // Win!
-            return true;
-        }
-        return false;
     }
 </script>
 </body></html>
